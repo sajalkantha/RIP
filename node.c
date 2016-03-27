@@ -12,9 +12,10 @@
 #include <sys/uio.h>
 #include <netinet/in.h>
 #include <signal.h>
+#define MAX_BACK_LOG (5)
 /*#include "rlib.h"*/
 
-
+/*
 struct {
 	targetIP;
 	targetPort;
@@ -31,8 +32,8 @@ struct {
 } RipEntry;
 
 struct {
-	socket;
-	next;
+	int socket;
+	Neighbors* next;
 ] Neighbors;
 
 struct {
@@ -57,15 +58,31 @@ int port;
 int IP;
 InfEntry head;
 RipEntry rip;
-Neighbors neighbor;
+Neighbors neighbor;*/
+int listenSocket;
 
-
+/*
 void ReadFromFile (String file, InfEntry head) {
 }
-
-void CreateListenSocket(int IP, int port) {
+*/
+void CreateListenSocket(char* IP, uint16_t port) {
+	int sock;
+	struct sockaddr_in server_addr, client_addr;
+	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+		perror("Create socket error:");
+		return;
+	}
+	//server_addr.sin_addr.s_addr = INADDR_ANY;
+	inet_aton(IP, &server_addr.sin_addr.s_addr); //IP="63.161.169.137"
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(port);
+	if (bind(sock,(struct sockaddr*)&server_addr,sizeof(server_addr))<0){
+	  perror("Bind socket error:");
+	}
+	listenSocket=sock;
+	listen(sock,MAX_BACK_LOG);
 }
-
+/*
 void SenderThread(InfEntry head, RipEntry rip, Neighbors neighbor) {
 }
 
@@ -74,7 +91,8 @@ void ReceiverThread(RipEntry rip, Neighbors neighbor) {
 
 void HandleUserInput(RipEntry rip, Neighbors neighbor, InfEntry head) {
 }
-
+*/
 int main() {
-
+	CreateListenSocket("10.0.2.15",8000);
+	return 0;
 }
