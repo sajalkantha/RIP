@@ -10,9 +10,25 @@
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/types.h>
 #include <netinet/in.h>
 #include <signal.h>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/types.h>
+#include <stdint.h>
+#include <pthread.h>
+#include "UDPIPInterface.h"
+#include "UDPSocket.h"
+#include "IPRIPInterface.h"
+
 #define MAX_BACK_LOG (5)
+#define MAX_LINE_SIZE 256
 /*#include "rlib.h"*/
 
 /*
@@ -61,10 +77,16 @@ RipEntry rip;
 Neighbors neighbor;*/
 int listenSocket;
 
-/*
-void ReadFromFile (String file, InfEntry head) {
+
+int ReadFromFile (char*  file) {
+	char line[MAX_LINE_SIZE];
+	FILE *node_file = fopen(file, "r");
+	int line_cnt = 0;
+	
+
+
 }
-*/
+
 void CreateListenSocket(char* IP, uint16_t port) {
 	int sock;
 	struct sockaddr_in server_addr, client_addr;
@@ -92,7 +114,7 @@ void ReceiverThread(RipEntry rip, Neighbors neighbor) {
 void HandleUserInput(RipEntry rip, Neighbors neighbor, InfEntry head) {
 }
 */
-int main() {
+int main(int argc, char argv[]) {
 	CreateListenSocket("10.0.2.15",8000);
 	return 0;
 }
