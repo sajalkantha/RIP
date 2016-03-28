@@ -41,25 +41,36 @@ struct neighbors{
 	struct neighbors* next;
 };
 typedef struct neighbors neighbors_t;
-/*
-struct {
+
+struct entries{
 	int32_t cost;
 	uint32_t address;
-} entries[num_entries];
+};
+typedef struct entries entries_t;
 
-struct {
-	command;
-	num_entries;
-	entries data[num_entries];
-} RipPayload;
+struct rip_payload {
+	uint16_t command;
+	uint16_t num_entries;
+	struct entries* data;
+};
+typedef struct rip_payload rip_payload_t;
 	
-struct {
-	version;
-	headerLen;
-	...
-	RipPayload;
-} RipPacket;
-*/
+struct rip_packet {
+	uint8_t version_and_headerlen;
+	uint8_t tos;
+	uint16_t totallen;
+	uint16_t id;
+	uint16_t fragoffset;
+	uint8_t ttl;
+	uint8_t protocol;
+	uint8_t cksum;
+	uint32_t sourceIP;
+	uint32_t destIP;
+	uint32_t options_and_padding;
+	struct rip_payload RipPayload;
+};
+typedef struct rip_packet rip_packet_t;
+
 uint16_t port;
 char* IP;
 inf_entry_t* infHead;
@@ -112,6 +123,7 @@ void* SenderThread() {
 	while(1) {
 		runner = neighbor;
 		while (!(runner==NULL)) {
+			
 			//do and send update
 		}
 		sleep(5);
