@@ -14,6 +14,7 @@
 #include <signal.h>
 #include <pthread.h>
 #define MAX_BACK_LOG (5)
+#define MAX_STATES 128
 /*#include "rlib.h"*/
 
 
@@ -29,8 +30,8 @@ typedef struct inf_entry inf_entry_t;
 struct rip_entry{
 	char* destIP;
 	int nextHop;
-	int cost;
-	struct rip_entry* nextEntry;
+	int32_t cost;
+	struct rip_entry* next;
 };
 typedef struct rip_entry rip_entry_t;
 
@@ -45,14 +46,14 @@ typedef struct neighbors neighbors_t;
 struct entries{
 	int32_t cost;
 	uint32_t address;
-};
+} __attribute__ ((packed)) ;
 typedef struct entries entries_t;
 
 struct rip_payload {
 	uint16_t command;
 	uint16_t num_entries;
-	struct entries* data;
-};
+	struct entries data[MAX_STATES];
+} __attribute__ ((packed)) ;
 typedef struct rip_payload rip_payload_t;
 	
 struct rip_packet {
@@ -67,14 +68,15 @@ struct rip_packet {
 	uint32_t sourceIP;
 	uint32_t destIP;
 	uint32_t options_and_padding;
-	struct rip_payload RipPayload;
-};
+	struct rip_payload ripPayload;
+} __attribute__ ((packed)) ;
 typedef struct rip_packet rip_packet_t;
 
 uint16_t port;
 char* IP;
 inf_entry_t* infHead;
 rip_entry_t* ripHead;
+int numEntries;
 neighbors_t* neighbor;
 int listenSocket;
 pthread_t sThread;
@@ -120,11 +122,33 @@ void* SenderThread() {
 		runner=runner->next;
 	}
 
+	rip_entry_t* ripRunner;
+	rip_packet_t* ripPacket;
 	while(1) {
 		runner = neighbor;
+		ripRunner = ripHead;
 		while (!(runner==NULL)) {
-			
-			//do and send update
+			ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
+			ripPacket->version_and_headerlen=0;
+			ripPacket->tos=0;
+			ripPacket->totallen=6*32*+32+64*numEntries;
+			ripPacket->id=0;
+			ripPacket->fragoffset=0;
+			ripPacket->ttl=16;
+			ripPacket->protocol=200;
+			ripPacket->cksum=0;
+			inet_aton(IP,ripPacket->sourceIP);
+			inet_aton(runner->IP,ripPacket->destIP);
+			ripPacket->options_and_padding=0;
+			ripPacket->ripPayload.command=2;
+			ripPacket->ripPayload.num_entries=numEntries;
+			int counter=0;
+			while(!(ripRunner==NULL)) {
+				ripPacket->ripPayload.data[counter].cost=ripRunner->cost;
+				inet_aton(ripRunner->destIP,ripPacket->ripPayload.data[counter].address);
+				ripRunner=ripRunner->next;
+			}
+			//send packet
 		}
 		sleep(5);
 	}
