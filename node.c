@@ -78,10 +78,67 @@ Neighbors neighbor;*/
 int listenSocket;
 
 
-int ReadFromFile (char*  file) {
+nt ReadFromFile (char*  file) {
 	char line[MAX_LINE_SIZE];
 	FILE *node_file = fopen(file, "r");
 	int line_cnt = 0;
+	int *sock;
+	InfEntry *head;
+	InfEntry *cur;
+
+	while (fgets(line, sizeof(line), node_file) != NULL) {
+		printf("\n%s", line);
+
+		if (count == 0) { // The first line of the file specifies the IP and port for this node: "[IP-address]:[port]" e.g. localhost:17000
+			token  = strtok(line, ":");
+			if (strcmp(token, "localhost") == 0){ // Assign the node the correct IP address form the first line of the file
+				IP = "127.0.0.1";
+			}else{
+				IP = token;
+			}
+			token = strtok(line, ":");	// Grab part after ':' of the first line
+			port = (uint16_t) atoi(token); // assing the Node the port of that token
+
+			sock = (int *)malloc(sizeof(int));
+			create_socket(sock);
+			bind_node_addr(sock, IP, (uint16_t) port);
+		}
+		else { //Every line after the first line specifies an interface on this node: [IP-address-of-remote-node]:[port-of-remote-node] [VIP of my interface] [VIP of the remote node's inteface]
+			token = strtok(line, ":");
+			cur->targetIP
+			token = strtok(token, " ");
+			cur->targetPort = atoi(token); //Port of remote node
+
+			token = strtok(NULL, " "); // VIP of the node's interface
+			if (token == NULL){
+				printf("The format fo this file is not correct");
+				return 1;
+			}
+
+			cur->myInf = token;
+			token = strtok(NULL, " "); // The VIP of the remote Node's interface
+			if (token == NULL){
+				printf("The format fo this file is not correct");
+				return 1;
+			}
+
+			cur->targetInf = token;
+
+			if(head->targetIP == NULL){ // Check to see if the head of the interface list has been populated
+				head = cur; // If head has not been set, set current to head
+			}
+			else{
+				head->next = cur; // if head has been set, set head->next to cur
+			}
+
+		}
+
+		line_cnt ++  
+
+	}
+
+	fclose(node_file);
+	return 0;
 	
 
 
