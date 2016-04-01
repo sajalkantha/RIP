@@ -13,6 +13,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <pthread.h>
+
 #define MAX_BACK_LOG (5)
 #define MAX_STATES 128
 #define MAX_MSG_LENGTH (1300)
@@ -163,13 +164,35 @@ void* SenderThread() {
 /*
 void ReceiverThread(RipEntry rip, Neighbors neighbor) {
 }
-
-void HandleUserInput(RipEntry rip, Neighbors neighbor, InfEntry head) {
-}
 */
-int main() {
-	CreateListenSocket("10.0.2.15",8000);
-	pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
+void HandleUserInput() {
+	char input[MAX_MSG_LENGTH];
+	while(1) {
+		fgets (input, MAX_MSG_LENGTH, stdin);
+		char* first = calloc(strlen(input)+1, sizeof(char));
+		strcpy(first, input);
+		first=strtok(first," ");
+		if(strcmp(first,"down")==0) {
+			printf("1");
+		}
+		else if(strcmp(first,"up")==0) {
+			printf("2");
+		}
+		else if(strcmp(input,"routes")==0) {
+			printf("3");
+		}
+		else if(strcmp(input,"ifconfig")==0) {
+			printf("4");
+		}
+		else if(strcmp(first,"send")==0) {
+			printf("%s",input);
+		}
+	}
+}
 
+int main() {
+	//CreateListenSocket("10.0.2.15",8000);
+	//pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
+	HandleUserInput(NULL,NULL,NULL);
 	return 0;
 }
