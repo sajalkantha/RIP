@@ -15,6 +15,7 @@
 #include <pthread.h>
 #define MAX_BACK_LOG (5)
 #define MAX_STATES 128
+#define MAX_MSG_LENGTH (1300)
 /*#include "rlib.h"*/
 
 
@@ -39,6 +40,8 @@ struct neighbors{
 	char* IP;
 	uint16_t port;
 	int socket;
+	int id;
+	int up;
 	struct neighbors* next;
 };
 typedef struct neighbors neighbors_t;
@@ -149,6 +152,10 @@ void* SenderThread() {
 				ripRunner=ripRunner->next;
 			}
 			//send packet
+			if (send(runner->socket, ripPacket, MAX_MSG_LENGTH, 0) < 0) {
+				perror("Send error");
+				return;
+			}
 		}
 		sleep(5);
 	}
