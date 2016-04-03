@@ -22,6 +22,7 @@
 #define MAX_STATES 128
 #define MAX_MSG_LENGTH (1300)
 #define MAX_LINE_SIZE (1000)
+#define MAX_IP_LEN (30)
 /*#include "rlib.h"*/
 
 
@@ -107,7 +108,9 @@ int ReadFromFile (char*  file) {
 			if (strcmp(token, "localhost") == 0){ // Assign the node the correct IP address form the first line of the file
 				IP = "127.0.0.1";
 			}else{
-				IP = token;
+				IP=(char*)malloc(MAX_IP_LEN);
+				strcpy(IP,token);
+				//IP = token;
 			}
 			token = strtok(NULL, ":");	// Grab part after ':' of the first line
 			//printf("port:%s",token);
@@ -118,11 +121,15 @@ int ReadFromFile (char*  file) {
 		}
 		else { //Every line after the first line specifies an interface on this node: [IP-address-of-remote-node]:[port-of-remote-node] [VIP of my interface] [VIP of the remote node's inteface]
 			cur = (inf_entry_t*)malloc(sizeof(inf_entry_t));
+			cur->targetIP=(char*)malloc(MAX_IP_LEN);
+			cur->myInfIP=(char*)malloc(MAX_IP_LEN);
+			cur->targetInfIP=(char*)malloc(MAX_IP_LEN);
 			char* token = strtok(line, ":");
 			if (strcmp(token, "localhost") == 0){ // Assign the node the correct IP address form the first line of the file
 				cur->targetIP="127.0.0.1";
 			}else{
-				cur->targetIP=token;
+				strcpy(cur->targetIP,token);
+				//cur->targetIP=token;
 			}
 			//printf("1%s\n",token);
 			token = strtok(NULL, " \n");
@@ -134,13 +141,15 @@ int ReadFromFile (char*  file) {
 				return 1;
 			}
 			//printf("1%s\n",token);
-			cur->myInfIP = token;
+			strcpy(cur->myInfIP,token);
+			//cur->myInfIP = token;
 			token = strtok(NULL, " \n"); // The VIP of the remote Node's interface
 			if (token == NULL){
 				printf("The format fo this file is not correct2");
 				return 1;
 			}
-			cur->targetInfIP = token;
+			strcpy(cur->targetInfIP,token);
+			//cur->targetInfIP = token;
 			cur->myInf = line_cnt;
 			if(line_cnt==1){ // Check to see if the head of the interface list has been populated
 				
