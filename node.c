@@ -18,6 +18,7 @@
 #include "UDPSocket.h"
 #include "IPRIPInterface.h"*/
 #include <pthread.h>
+
 #define MAX_BACK_LOG (5)
 #define MAX_STATES 128
 #define MAX_MSG_LENGTH (1300)
@@ -243,10 +244,36 @@ void* SenderThread() {
 /*
 void ReceiverThread(RipEntry rip, Neighbors neighbor) {
 }
-
-void HandleUserInput(RipEntry rip, Neighbors neighbor, InfEntry head) {
-}
 */
+
+void HandleUserInput() {
+	char* input = (char*)malloc(MAX_MSG_LENGTH);
+	while(1) {
+		fgets (input, MAX_MSG_LENGTH, stdin);
+		char* first = calloc(strlen(input)+1, sizeof(char));
+		strcpy(first, input);
+		input=strtok(input,"\n");
+		if(strcmp(input,"routes")==0) {
+			printf("3");
+		}
+		else if(strcmp(input,"ifconfig")==0) {
+			printf("4");
+		}
+		else {
+			first=strtok(first," ");
+			if(strcmp(first,"down")==0) {
+				printf("1");
+			}
+			else if(strcmp(first,"up")==0) {
+				printf("2");
+			}
+			else if(strcmp(first,"send")==0) {
+				printf("%s",input);
+			}
+		}
+	}
+}
+
 void print_debug() {
 	printf("my ip: %s\n", IP);
 	printf("my port: %d\n", port);
@@ -260,6 +287,7 @@ void print_debug() {
 		runner=runner->next;
 	}
 }
+
 int main(int argc, char* argv[]) {
 	if (argc!=2) {
 		printf("Incorrect usage\n");
@@ -269,6 +297,6 @@ int main(int argc, char* argv[]) {
 	CreateListenSocket(IP,port);
 	print_debug();
 	//pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
-
+	HandleUserInput(NULL,NULL,NULL);
 	return 0;
 }
