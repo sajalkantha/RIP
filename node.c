@@ -195,6 +195,17 @@ void initializeRoutingTable() {
 		}
 		runner=runner->next;
 	}
+	runner = infHead;
+	while (runner!=NULL) {
+		rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
+		rip->destIP = runner->myInfIP;
+		rip->nextHop = runner->myInf;
+		rip->cost = 0;
+		rip->next = NULL;
+		rRunner->next=rip;
+		rRunner=rRunner->next;
+		runner=runner->next;
+	}
 }
 void CreateListenSocket(char* IP, uint16_t port) {
 	int sock;
@@ -260,7 +271,9 @@ void* SenderThread() {
 				ripPacket->ripPayload.data[counter].cost=ripRunner->cost;
 				inet_aton(ripRunner->destIP,&ripPacket->ripPayload.data[counter].address);
 				ripRunner=ripRunner->next;
+				counter++;
 			}
+			ripPacket->ripPayload.data[counter].cost=-1;
 			//send packet
 			printf("sending...,%d",runner->socket);
 			fflush(stdout);
@@ -284,13 +297,31 @@ void* listenForInput() {
         struct sockaddr_in remaddr;     /* remote address */
         socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
         rip_packet_t* ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
-        printf("waiting to read...\n");
+        //printf("waiting to read...\n");
         recvlen = recvfrom(listenSocket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr *)&remaddr, &addrlen);
         //recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
-        printf("received %d bytes\n", recvlen);
+        //printf("received %d bytes\n", recvlen);
         if (recvlen > 0) {
                 //buf[recvlen] = 0;
                 printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
+                printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
+                int i;
+                for (i=0;i<MAX_STATES;i++) {
+                	if (ripPacket->ripPayload.data[i].cost==-1) {
+                		printf("nulled%d",i);
+                		break;
+                	}
+                	rip_entry_t* runner = ripHead;
+                	while (runner!=NULL) {
+                		printf("%s:%s\n",runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address));
+                		if (runner->destIP==inet_ntoa(ripPacket->ripPayload.data[i].address)) {
+                			printf("match");
+                			break;
+                		}
+                		runner=runner->next;
+                	}
+                }
+
         }
         else if (recvlen<0) {
 			perror("Receive error");
@@ -322,7 +353,9 @@ void HandleUserInput() {
 		if(strcmp(input,"routes")==0) {
 			rip_entry_t* runner=ripHead;
 			while(runner!=NULL) {
-				printf("%s\t%d\t%d\n",runner->destIP,runner->nextHop,runner->cost);
+				if (runner->cost!=0) {
+					printf("%s\t%d\t%d\n",runner->destIP,runner->nextHop,runner->cost);
+				}
 				runner=runner->next;
 			}
 		}
