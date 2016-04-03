@@ -250,8 +250,8 @@ void* SenderThread() {
 	rip_packet_t* ripPacket;
 	while(1) {
 		runner = infHead;
-		ripRunner = ripHead;
 		while (!(runner==NULL)) {
+			ripRunner = ripHead;
 			ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
 			ripPacket->version_and_headerlen=0;
 			ripPacket->tos=0;
@@ -290,14 +290,18 @@ void* SenderThread() {
 	}
 }
 
-rip_entry_t* findRipEntry(inaddr sourceIP) {
+rip_entry_t* findRipEntry(struct in_addr sourceIP) {
+	//printf("start find:%s\n",inet_ntoa(sourceIP));
 	rip_entry_t* runner = ripHead;
 	while(runner!=NULL) {
-		if (runner->destIP==inet_ntoa(sourceIP)) {
+		//printf("%s\n",runner->destIP);
+		if (strcmp(runner->destIP,inet_ntoa(sourceIP))==0) {
+			//printf("returnign runner\n");
 			return runner;
 		}
 		runner=runner->next;
 	}
+	//printf("returning null\n");
 	return NULL;
 }
 
@@ -318,23 +322,47 @@ void* listenForInput() {
                 printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
                 int i;
                 for (i=0;i<MAX_STATES;i++) {
+                	printf("entry%d\n",i);
                 	if (ripPacket->ripPayload.data[i].cost==-1) {
-                		printf("nulled%d",i);
+                		printf("nulled%d\n",i);
                 		break;
                 	}
                 	rip_entry_t* runner = ripHead;
+                	int new=1;
                 	while (runner!=NULL) {
                 		printf("%s:%s\n",runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address));
-                		if (runner->destIP==inet_ntoa(ripPacket->ripPayload.data[i].address)) {
-                			printf("match");
-                			rip_entry_t* sender = findRipEntry(ripPacket.sourceIP);
-                			if (ripPacket->ripPayload.data[i].cost+)
+                		if (strcmp(runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address))==0) {
+                			printf("%s match %s\n", runner->destIP, inet_ntoa(ripPacket->ripPayload.data[i].address));
+                			rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
+                			if (ripPacket->ripPayload.data[i].cost+sender->cost<runner->cost) {
+                				printf("rip updated");
+                				runner->cost=(ripPacket->ripPayload.data[i].cost+sender->cost);
+                				runner->nextHop=sender->nextHop;
+                			}
+                			new=0;
                 			break;
                 		}
                 		runner=runner->next;
                 	}
+                	if (new==1) {
+                		printf("ADDINGGGGGGGGGG\n");
+                		rip_entry_t* arunner = ripHead;
+                		while(arunner->next!=NULL) {
+                			arunner=arunner->next;
+                		}
+            			rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
+                		rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
+                		printf("!%s!\n", inet_ntoa(ripPacket->ripPayload.data[i].address));
+                		rip->destIP=(char*)malloc(strlen(inet_ntoa(ripPacket->ripPayload.data[i].address))+1);
+                		memcpy (rip->destIP, inet_ntoa(ripPacket->ripPayload.data[i].address), strlen(inet_ntoa(ripPacket->ripPayload.data[i].address))+1);
+                		printf("destIP=%s", rip->destIP);
+                		rip->nextHop = sender->nextHop;
+                		rip->cost = ripPacket->ripPayload.data[i].cost+sender->cost;
+                		rip->next = NULL;
+                		arunner->next=rip;
+                		arunner=arunner->next;
+                	}
                 }
-
         }
         else if (recvlen<0) {
 			perror("Receive error");
