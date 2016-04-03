@@ -290,6 +290,17 @@ void* SenderThread() {
 	}
 }
 
+rip_entry_t* findRipEntry(inaddr sourceIP) {
+	rip_entry_t* runner = ripHead;
+	while(runner!=NULL) {
+		if (runner->destIP==inet_ntoa(sourceIP)) {
+			return runner;
+		}
+		runner=runner->next;
+	}
+	return NULL;
+}
+
 void* listenForInput() {
 	while(1) {
         /*unsigned char buf[BUFSIZE];     /* receive buffer */
@@ -316,6 +327,8 @@ void* listenForInput() {
                 		printf("%s:%s\n",runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address));
                 		if (runner->destIP==inet_ntoa(ripPacket->ripPayload.data[i].address)) {
                 			printf("match");
+                			rip_entry_t* sender = findRipEntry(ripPacket.sourceIP);
+                			if (ripPacket->ripPayload.data[i].cost+)
                 			break;
                 		}
                 		runner=runner->next;
