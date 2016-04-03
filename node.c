@@ -10,22 +10,30 @@
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/types.h>
 #include <netinet/in.h>
 #include <signal.h>
+#include <stdint.h>
+/*#include "UDPIPInterface.h"
+#include "UDPSocket.h"
+#include "IPRIPInterface.h"*/
 #include <pthread.h>
 
 #define MAX_BACK_LOG (5)
 #define MAX_STATES 128
 #define MAX_MSG_LENGTH (1300)
+#define MAX_LINE_SIZE (1000)
+#define MAX_IP_LEN (30)
 /*#include "rlib.h"*/
 
 
 struct inf_entry {
 	char* targetIP;
 	uint16_t targetPort;
-	int targetInf;
+	char* targetInfIP;
+	char* myInfIP;
 	int myInf;
-	struct int_entry* next;
+	struct inf_entry* next;
 };
 typedef struct inf_entry inf_entry_t;
 
@@ -85,10 +93,82 @@ neighbors_t* neighbor;
 int listenSocket;
 pthread_t sThread;
 
-/*
-void ReadFromFile (String file, InfEntry head) {
+
+int ReadFromFile (char*  file) {
+	char line[MAX_LINE_SIZE];
+	FILE *node_file = fopen(file, "r");
+	int line_cnt = 0;
+	int *sock;
+	inf_entry_t *head;
+	inf_entry_t *cur;
+
+	while (fgets(line, sizeof(line), node_file) != NULL) {
+		//printf("\n%s", line);
+		if (line_cnt == 0) { // The first line of the file specifies the IP and port for this node: "[IP-address]:[port]" e.g. localhost:17000
+			char* token  = strtok(line, ":");
+			if (strcmp(token, "localhost") == 0){ // Assign the node the correct IP address form the first line of the file
+				IP = "127.0.0.1";
+			}else{
+				IP=(char*)malloc(MAX_IP_LEN);
+				strcpy(IP,token);
+				//IP = token;
+			}
+			token = strtok(NULL, ":");	// Grab part after ':' of the first line
+			//printf("port:%s",token);
+			port = (uint16_t) atoi(token); // assing the Node the port of that token
+			/*sock = (int *)malloc(sizeof(int));
+			create_socket(sock);
+			bind_node_addr(sock, IP, (uint16_t) port);*/
+		}
+		else { //Every line after the first line specifies an interface on this node: [IP-address-of-remote-node]:[port-of-remote-node] [VIP of my interface] [VIP of the remote node's inteface]
+			cur = (inf_entry_t*)malloc(sizeof(inf_entry_t));
+			cur->targetIP=(char*)malloc(MAX_IP_LEN);
+			cur->myInfIP=(char*)malloc(MAX_IP_LEN);
+			cur->targetInfIP=(char*)malloc(MAX_IP_LEN);
+			char* token = strtok(line, ":");
+			if (strcmp(token, "localhost") == 0){ // Assign the node the correct IP address form the first line of the file
+				cur->targetIP="127.0.0.1";
+			}else{
+				strcpy(cur->targetIP,token);
+				//cur->targetIP=token;
+			}
+			//printf("1%s\n",token);
+			token = strtok(NULL, " \n");
+			cur->targetPort = atoi(token); //Port of remote node
+			//printf("1%s\n",token);
+			token = strtok(NULL, " \n"); // VIP of the node's interface
+			if (token == NULL){
+				printf("The format fo this file is not correct1");
+				return 1;
+			}
+			//printf("1%s\n",token);
+			strcpy(cur->myInfIP,token);
+			//cur->myInfIP = token;
+			token = strtok(NULL, " \n"); // The VIP of the remote Node's interface
+			if (token == NULL){
+				printf("The format fo this file is not correct2");
+				return 1;
+			}
+			strcpy(cur->targetInfIP,token);
+			//cur->targetInfIP = token;
+			cur->myInf = line_cnt;
+			if(line_cnt==1){ // Check to see if the head of the interface list has been populated
+				
+				head = cur; // If head has not been set, set current to head
+				infHead = cur;
+				//printf("headtargetip:%s",head->targetIP);
+			}
+			else{
+				head->next = cur; // if head has been set, set head->next to cur
+				head=head->next;
+			}
+		}
+		line_cnt++;
+	}
+	fclose(node_file);
+	return 0;
 }
-*/
+
 void CreateListenSocket(char* IP, uint16_t port) {
 	int sock;
 	struct sockaddr_in server_addr, client_addr;
@@ -165,33 +245,57 @@ void* SenderThread() {
 void ReceiverThread(RipEntry rip, Neighbors neighbor) {
 }
 */
+
 void HandleUserInput() {
-	char input[MAX_MSG_LENGTH];
+	char* input = (char*)malloc(MAX_MSG_LENGTH);
 	while(1) {
 		fgets (input, MAX_MSG_LENGTH, stdin);
 		char* first = calloc(strlen(input)+1, sizeof(char));
 		strcpy(first, input);
-		first=strtok(first," ");
-		if(strcmp(first,"down")==0) {
-			printf("1");
-		}
-		else if(strcmp(first,"up")==0) {
-			printf("2");
-		}
-		else if(strcmp(input,"routes")==0) {
+		input=strtok(input,"\n");
+		if(strcmp(input,"routes")==0) {
 			printf("3");
 		}
 		else if(strcmp(input,"ifconfig")==0) {
 			printf("4");
 		}
-		else if(strcmp(first,"send")==0) {
-			printf("%s",input);
+		else {
+			first=strtok(first," ");
+			if(strcmp(first,"down")==0) {
+				printf("1");
+			}
+			else if(strcmp(first,"up")==0) {
+				printf("2");
+			}
+			else if(strcmp(first,"send")==0) {
+				printf("%s",input);
+			}
 		}
 	}
 }
 
-int main() {
-	//CreateListenSocket("10.0.2.15",8000);
+void print_debug() {
+	printf("my ip: %s\n", IP);
+	printf("my port: %d\n", port);
+	inf_entry_t* runner=infHead;
+	while (runner!=NULL) {
+		printf("interface #%d:\n",runner->myInf);
+		printf("target ip: %s\n",runner->targetIP);
+		printf("target port: %d\n",runner->targetPort);
+		printf("target interface ip: %s\n",runner->targetInfIP);
+		printf("my interface ip: %s\n",runner->myInfIP);
+		runner=runner->next;
+	}
+}
+
+int main(int argc, char* argv[]) {
+	if (argc!=2) {
+		printf("Incorrect usage\n");
+		return 1;
+	}
+	ReadFromFile(argv[1]);
+	CreateListenSocket(IP,port);
+	print_debug();
 	//pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
 	HandleUserInput(NULL,NULL,NULL);
 	return 0;
