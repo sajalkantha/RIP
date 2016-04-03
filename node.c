@@ -176,6 +176,37 @@ int ReadFromFile (char*  file) {
 	return 0;
 }
 
+void initializeRoutingTable() {
+	inf_entry_t* runner = infHead;
+	rip_entry_t* rRunner = ripHead;
+	while (runner!=NULL) {
+		rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
+		rip->destIP = runner->targetInfIP;
+		rip->nextHop = runner->myInf;
+		rip->cost = 1;
+		rip->next = NULL;
+		if (rRunner==NULL) {
+				ripHead=rip;
+				rRunner=ripHead;
+		}
+		else {
+			rRunner->next=rip;
+			rRunner=rRunner->next;
+		}
+		runner=runner->next;
+	}
+	runner = infHead;
+	while (runner!=NULL) {
+		rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
+		rip->destIP = runner->myInfIP;
+		rip->nextHop = runner->myInf;
+		rip->cost = 0;
+		rip->next = NULL;
+		rRunner->next=rip;
+		rRunner=rRunner->next;
+		runner=runner->next;
+	}
+}
 void CreateListenSocket(char* IP, uint16_t port) {
 	int sock;
 	struct sockaddr_in server_addr, client_addr;
@@ -219,8 +250,8 @@ void* SenderThread() {
 	rip_packet_t* ripPacket;
 	while(1) {
 		runner = infHead;
-		ripRunner = ripHead;
 		while (!(runner==NULL)) {
+			ripRunner = ripHead;
 			ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
 			ripPacket->version_and_headerlen=0;
 			ripPacket->tos=0;
@@ -240,7 +271,9 @@ void* SenderThread() {
 				ripPacket->ripPayload.data[counter].cost=ripRunner->cost;
 				inet_aton(ripRunner->destIP,&ripPacket->ripPayload.data[counter].address);
 				ripRunner=ripRunner->next;
+				counter++;
 			}
+			ripPacket->ripPayload.data[counter].cost=-1;
 			//send packet
 			printf("sending...,%d",runner->socket);
 			fflush(stdout);
@@ -257,20 +290,79 @@ void* SenderThread() {
 	}
 }
 
+rip_entry_t* findRipEntry(struct in_addr sourceIP) {
+	//printf("start find:%s\n",inet_ntoa(sourceIP));
+	rip_entry_t* runner = ripHead;
+	while(runner!=NULL) {
+		//printf("%s\n",runner->destIP);
+		if (strcmp(runner->destIP,inet_ntoa(sourceIP))==0) {
+			//printf("returnign runner\n");
+			return runner;
+		}
+		runner=runner->next;
+	}
+	//printf("returning null\n");
+	return NULL;
+}
+
 void* listenForInput() {
 	while(1) {
-        unsigned char buf[BUFSIZE];     /* receive buffer */
+        /*unsigned char buf[BUFSIZE];     /* receive buffer */
         int recvlen;                    /* # bytes received */
         struct sockaddr_in remaddr;     /* remote address */
         socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
         rip_packet_t* ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
-        printf("waiting to read...\n");
+        //printf("waiting to read...\n");
         recvlen = recvfrom(listenSocket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr *)&remaddr, &addrlen);
         //recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
-        printf("received %d bytes\n", recvlen);
+        //printf("received %d bytes\n", recvlen);
         if (recvlen > 0) {
-                buf[recvlen] = 0;
+                //buf[recvlen] = 0;
                 printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
+                printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
+                int i;
+                for (i=0;i<MAX_STATES;i++) {
+                	printf("entry%d\n",i);
+                	if (ripPacket->ripPayload.data[i].cost==-1) {
+                		printf("nulled%d\n",i);
+                		break;
+                	}
+                	rip_entry_t* runner = ripHead;
+                	int new=1;
+                	while (runner!=NULL) {
+                		printf("%s:%s\n",runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address));
+                		if (strcmp(runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address))==0) {
+                			printf("%s match %s\n", runner->destIP, inet_ntoa(ripPacket->ripPayload.data[i].address));
+                			rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
+                			if (ripPacket->ripPayload.data[i].cost+sender->cost<runner->cost) {
+                				printf("rip updated");
+                				runner->cost=(ripPacket->ripPayload.data[i].cost+sender->cost);
+                				runner->nextHop=sender->nextHop;
+                			}
+                			new=0;
+                			break;
+                		}
+                		runner=runner->next;
+                	}
+                	if (new==1) {
+                		printf("ADDINGGGGGGGGGG\n");
+                		rip_entry_t* arunner = ripHead;
+                		while(arunner->next!=NULL) {
+                			arunner=arunner->next;
+                		}
+            			rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
+                		rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
+                		printf("!%s!\n", inet_ntoa(ripPacket->ripPayload.data[i].address));
+                		rip->destIP=(char*)malloc(strlen(inet_ntoa(ripPacket->ripPayload.data[i].address))+1);
+                		memcpy (rip->destIP, inet_ntoa(ripPacket->ripPayload.data[i].address), strlen(inet_ntoa(ripPacket->ripPayload.data[i].address))+1);
+                		printf("destIP=%s", rip->destIP);
+                		rip->nextHop = sender->nextHop;
+                		rip->cost = ripPacket->ripPayload.data[i].cost+sender->cost;
+                		rip->next = NULL;
+                		arunner->next=rip;
+                		arunner=arunner->next;
+                	}
+                }
         }
         else if (recvlen<0) {
 			perror("Receive error");
@@ -300,7 +392,13 @@ void HandleUserInput() {
 		strcpy(first, input);
 		input=strtok(input,"\n");
 		if(strcmp(input,"routes")==0) {
-			printf("3");
+			rip_entry_t* runner=ripHead;
+			while(runner!=NULL) {
+				if (runner->cost!=0) {
+					printf("%s\t%d\t%d\n",runner->destIP,runner->nextHop,runner->cost);
+				}
+				runner=runner->next;
+			}
 		}
 		else if(strcmp(input,"ifconfig")==0) {
 			inf_entry_t* runner=infHead;
@@ -388,6 +486,7 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 	ReadFromFile(argv[1]);
+	initializeRoutingTable();
 	CreateListenSocket(IP,port);
 	print_debug();
 	pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
