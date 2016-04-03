@@ -33,6 +33,9 @@ struct inf_entry {
 	char* targetInfIP;
 	char* myInfIP;
 	int myInf;
+	int up;
+	int socket;
+	struct sockaddr_in server_addr;
 	struct inf_entry* next;
 };
 typedef struct inf_entry inf_entry_t;
@@ -152,6 +155,7 @@ int ReadFromFile (char*  file) {
 			strcpy(cur->targetInfIP,token);
 			//cur->targetInfIP = token;
 			cur->myInf = line_cnt;
+			cur->up=1;
 			if(line_cnt==1){ // Check to see if the head of the interface list has been populated
 				
 				head = cur; // If head has not been set, set current to head
@@ -172,7 +176,7 @@ int ReadFromFile (char*  file) {
 void CreateListenSocket(char* IP, uint16_t port) {
 	int sock;
 	struct sockaddr_in server_addr, client_addr;
-	if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+	if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
 		perror("Create socket error:");
 		return;
 	}
@@ -184,32 +188,34 @@ void CreateListenSocket(char* IP, uint16_t port) {
 	  perror("Bind socket error:");
 	}
 	listenSocket=sock;
-	listen(sock,MAX_BACK_LOG);
+	//listen(sock,MAX_BACK_LOG); //dont need for udp?
 }
 
 void* SenderThread() {
 	int sock;
-	struct sockaddr_in* server_addr;
-	neighbors_t* runner = neighbor;
-	while (!(runner->next==NULL)) {
-		if ((sock = socket(AF_INET, SOCK_STREAM/* use tcp */, 0)) < 0) {
-			return;
+	//struct sockaddr_in server_addr;
+	inf_entry_t* runner = infHead;
+	while (runner!=NULL) {
+		if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+			printf("errof creating socket");
+			continue;
 		}
 		runner->socket=sock;
-		server_addr=(struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
-		inet_aton(runner->IP, server_addr->sin_addr.s_addr); //IP="63.161.169.137"
-		server_addr->sin_family = AF_INET;
-		server_addr->sin_port = htons(runner->port);
-		if (connect(runner->socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+		memset((char*)&runner->server_addr, 0, sizeof(runner->server_addr));
+		//server_addr=(struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
+		inet_aton(runner->targetIP, runner->server_addr.sin_addr.s_addr); //IP="63.161.169.137"
+		runner->server_addr.sin_family = AF_INET;
+		runner->server_addr.sin_port = htons(runner->targetPort);
+		//runner->server_addr=&server_addr;
+		/*if (connect(runner->socket, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
 			return;
-		}
+		}*/
 		runner=runner->next;
 	}
-
 	rip_entry_t* ripRunner;
 	rip_packet_t* ripPacket;
 	while(1) {
-		runner = neighbor;
+		runner = infHead;
 		ripRunner = ripHead;
 		while (!(runner==NULL)) {
 			ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
@@ -222,7 +228,7 @@ void* SenderThread() {
 			ripPacket->protocol=200;
 			ripPacket->cksum=0;
 			inet_aton(IP,ripPacket->sourceIP);
-			inet_aton(runner->IP,ripPacket->destIP);
+			inet_aton(runner->targetInfIP,ripPacket->destIP);
 			ripPacket->options_and_padding=0;
 			ripPacket->ripPayload.command=2;
 			ripPacket->ripPayload.num_entries=numEntries;
@@ -233,10 +239,14 @@ void* SenderThread() {
 				ripRunner=ripRunner->next;
 			}
 			//send packet
-			if (send(runner->socket, ripPacket, MAX_MSG_LENGTH, 0) < 0) {
+			printf("sending...,%d",runner->socket);
+			fflush(stdout);
+			if (sendto(runner->socket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
 				perror("Send error");
 				return;
 			}
+			//sleep(1);
+			runner=runner->next;
 		}
 		sleep(5);
 	}
@@ -248,6 +258,7 @@ void ReceiverThread(RipEntry rip, Neighbors neighbor) {
 
 void HandleUserInput() {
 	char* input = (char*)malloc(MAX_MSG_LENGTH);
+	int restart=0;
 	while(1) {
 		fgets (input, MAX_MSG_LENGTH, stdin);
 		char* first = calloc(strlen(input)+1, sizeof(char));
@@ -257,15 +268,62 @@ void HandleUserInput() {
 			printf("3");
 		}
 		else if(strcmp(input,"ifconfig")==0) {
-			printf("4");
+			inf_entry_t* runner=infHead;
+			while (runner!=NULL) {
+				if (runner->up==1) {
+					printf("%d\t%s\tup\n",runner->myInf,runner->myInfIP);
+				}
+				else {
+					printf("%d\t%s\tdown\n",runner->myInf,runner->myInfIP);
+				}
+				runner=runner->next;
+			}
 		}
 		else {
 			first=strtok(first," ");
 			if(strcmp(first,"down")==0) {
-				printf("1");
+				first=strtok(NULL," ");
+				int id = (int)atoi(first);
+				if (id==0) {
+					printf("invalid interface\n");
+					restart=1;
+				}
+				inf_entry_t* runner=infHead;
+				while (runner!=NULL) {
+					if (runner->myInf==id) {
+						runner->up=0;
+						printf("interface %d down\n",id);
+						restart=1;
+					}
+					runner=runner->next;
+				}
+				if (restart==1) {
+					restart=0;
+					continue;
+				}
+				printf("Interface %d not found\n",id);
 			}
 			else if(strcmp(first,"up")==0) {
-				printf("2");
+				first=strtok(NULL," ");
+				int id = (int)atoi(first);
+				if (id==0) {
+					printf("invalid interface\n");
+					restart=1;
+				}
+				inf_entry_t* runner=infHead;
+				while (runner!=NULL) {
+					if (runner->myInf==id) {
+						runner->up=1;
+						printf("interface %d up\n",id);
+						restart=1;
+					}
+					runner=runner->next;
+				}
+				if (restart==1) {
+					restart=0;
+					continue;
+				}
+				printf("Interface %d not found\n",id);
 			}
 			else if(strcmp(first,"send")==0) {
 				printf("%s",input);
@@ -284,6 +342,7 @@ void print_debug() {
 		printf("target port: %d\n",runner->targetPort);
 		printf("target interface ip: %s\n",runner->targetInfIP);
 		printf("my interface ip: %s\n",runner->myInfIP);
+		printf("my socket: %d\n",runner->socket);
 		runner=runner->next;
 	}
 }
@@ -296,7 +355,7 @@ int main(int argc, char* argv[]) {
 	ReadFromFile(argv[1]);
 	CreateListenSocket(IP,port);
 	print_debug();
-	//pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
+	pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
 	HandleUserInput(NULL,NULL,NULL);
 	return 0;
 }
