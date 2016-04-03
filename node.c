@@ -176,6 +176,26 @@ int ReadFromFile (char*  file) {
 	return 0;
 }
 
+void initializeRoutingTable() {
+	inf_entry_t* runner = infHead;
+	rip_entry_t* rRunner = ripHead;
+	while (runner!=NULL) {
+		rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
+		rip->destIP = runner->targetInfIP;
+		rip->nextHop = runner->myInf;
+		rip->cost = 1;
+		rip->next = NULL;
+		if (rRunner==NULL) {
+				ripHead=rip;
+				rRunner=ripHead;
+		}
+		else {
+			rRunner->next=rip;
+			rRunner=rRunner->next;
+		}
+		runner=runner->next;
+	}
+}
 void CreateListenSocket(char* IP, uint16_t port) {
 	int sock;
 	struct sockaddr_in server_addr, client_addr;
@@ -259,7 +279,7 @@ void* SenderThread() {
 
 void* listenForInput() {
 	while(1) {
-        unsigned char buf[BUFSIZE];     /* receive buffer */
+        /*unsigned char buf[BUFSIZE];     /* receive buffer */
         int recvlen;                    /* # bytes received */
         struct sockaddr_in remaddr;     /* remote address */
         socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
@@ -269,7 +289,7 @@ void* listenForInput() {
         //recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
         printf("received %d bytes\n", recvlen);
         if (recvlen > 0) {
-                buf[recvlen] = 0;
+                //buf[recvlen] = 0;
                 printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
         }
         else if (recvlen<0) {
@@ -300,7 +320,11 @@ void HandleUserInput() {
 		strcpy(first, input);
 		input=strtok(input,"\n");
 		if(strcmp(input,"routes")==0) {
-			printf("3");
+			rip_entry_t* runner=ripHead;
+			while(runner!=NULL) {
+				printf("%s\t%d\t%d\n",runner->destIP,runner->nextHop,runner->cost);
+				runner=runner->next;
+			}
 		}
 		else if(strcmp(input,"ifconfig")==0) {
 			inf_entry_t* runner=infHead;
@@ -388,6 +412,7 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 	ReadFromFile(argv[1]);
+	initializeRoutingTable();
 	CreateListenSocket(IP,port);
 	print_debug();
 	pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
