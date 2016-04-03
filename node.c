@@ -14,6 +14,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdint.h>
+#include <arpa/inet.h>
 /*#include "UDPIPInterface.h"
 #include "UDPSocket.h"
 #include "IPRIPInterface.h"*/
@@ -24,6 +25,7 @@
 #define MAX_MSG_LENGTH (1300)
 #define MAX_LINE_SIZE (1000)
 #define MAX_IP_LEN (30)
+#define BUFSIZE 2048
 /*#include "rlib.h"*/
 
 
@@ -37,6 +39,7 @@ struct inf_entry {
 	int socket;
 	struct sockaddr_in server_addr;
 	struct inf_entry* next;
+	pthread_t tid;
 };
 typedef struct inf_entry inf_entry_t;
 
@@ -60,7 +63,7 @@ typedef struct neighbors neighbors_t;
 
 struct entries{
 	int32_t cost;
-	uint32_t address;
+	struct in_addr address;
 } __attribute__ ((packed)) ;
 typedef struct entries entries_t;
 
@@ -80,8 +83,8 @@ struct rip_packet {
 	uint8_t ttl;
 	uint8_t protocol;
 	uint8_t cksum;
-	uint32_t sourceIP;
-	uint32_t destIP;
+	struct in_addr sourceIP;
+	struct in_addr destIP;
 	uint32_t options_and_padding;
 	struct rip_payload ripPayload;
 } __attribute__ ((packed)) ;
@@ -94,7 +97,7 @@ rip_entry_t* ripHead;
 int numEntries;
 neighbors_t* neighbor;
 int listenSocket;
-pthread_t sThread;
+pthread_t sThread, rThread;
 
 
 int ReadFromFile (char*  file) {
@@ -181,7 +184,7 @@ void CreateListenSocket(char* IP, uint16_t port) {
 		return;
 	}
 	//server_addr.sin_addr.s_addr = INADDR_ANY;
-	inet_aton(IP, &server_addr.sin_addr.s_addr); //IP="63.161.169.137"
+	inet_aton(IP, &server_addr.sin_addr); //IP="63.161.169.137"
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port = htons(port);
 	if (bind(sock,(struct sockaddr*)&server_addr,sizeof(server_addr))<0){
@@ -203,7 +206,7 @@ void* SenderThread() {
 		runner->socket=sock;
 		memset((char*)&runner->server_addr, 0, sizeof(runner->server_addr));
 		//server_addr=(struct sockaddr_in*)malloc(sizeof(struct sockaddr_in));
-		inet_aton(runner->targetIP, runner->server_addr.sin_addr.s_addr); //IP="63.161.169.137"
+		inet_aton(runner->targetIP, &runner->server_addr.sin_addr); //IP="63.161.169.137"
 		runner->server_addr.sin_family = AF_INET;
 		runner->server_addr.sin_port = htons(runner->targetPort);
 		//runner->server_addr=&server_addr;
@@ -227,20 +230,22 @@ void* SenderThread() {
 			ripPacket->ttl=16;
 			ripPacket->protocol=200;
 			ripPacket->cksum=0;
-			inet_aton(IP,ripPacket->sourceIP);
-			inet_aton(runner->targetInfIP,ripPacket->destIP);
+			inet_aton(runner->myInfIP,&ripPacket->sourceIP);
+			inet_aton(runner->targetInfIP,&ripPacket->destIP);
 			ripPacket->options_and_padding=0;
 			ripPacket->ripPayload.command=2;
 			ripPacket->ripPayload.num_entries=numEntries;
 			int counter=0;
 			while(!(ripRunner==NULL)) {
 				ripPacket->ripPayload.data[counter].cost=ripRunner->cost;
-				inet_aton(ripRunner->destIP,ripPacket->ripPayload.data[counter].address);
+				inet_aton(ripRunner->destIP,&ripPacket->ripPayload.data[counter].address);
 				ripRunner=ripRunner->next;
 			}
 			//send packet
 			printf("sending...,%d",runner->socket);
 			fflush(stdout);
+			//char *my_message = "this is a test message";
+			//if (sendto(runner->socket, my_message, strlen(my_message), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
 			if (sendto(runner->socket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
 				perror("Send error");
 				return;
@@ -251,10 +256,40 @@ void* SenderThread() {
 		sleep(5);
 	}
 }
-/*
-void ReceiverThread(RipEntry rip, Neighbors neighbor) {
+
+void* listenForInput() {
+	while(1) {
+        unsigned char buf[BUFSIZE];     /* receive buffer */
+        int recvlen;                    /* # bytes received */
+        struct sockaddr_in remaddr;     /* remote address */
+        socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
+        rip_packet_t* ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
+        printf("waiting to read...\n");
+        recvlen = recvfrom(listenSocket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr *)&remaddr, &addrlen);
+        //recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
+        printf("received %d bytes\n", recvlen);
+        if (recvlen > 0) {
+                buf[recvlen] = 0;
+                printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
+        }
+        else if (recvlen<0) {
+			perror("Receive error");
+        }
+	}
 }
-*/
+void* ReceiverThread() {
+	inf_entry_t* runner = infHead;
+
+	while (runner!=NULL) {
+		pthread_create(&runner->tid, NULL, &listenForInput, NULL);
+		runner=runner->next;
+	}
+	/*
+	while(1) {
+
+	}*/
+}
+
 
 void HandleUserInput() {
 	char* input = (char*)malloc(MAX_MSG_LENGTH);
@@ -356,6 +391,7 @@ int main(int argc, char* argv[]) {
 	CreateListenSocket(IP,port);
 	print_debug();
 	pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
+	pthread_create(&rThread, NULL, &ReceiverThread, NULL);
 	HandleUserInput(NULL,NULL,NULL);
 	return 0;
 }
