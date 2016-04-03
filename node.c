@@ -33,6 +33,7 @@ struct inf_entry {
 	char* targetInfIP;
 	char* myInfIP;
 	int myInf;
+	int up;
 	struct inf_entry* next;
 };
 typedef struct inf_entry inf_entry_t;
@@ -152,6 +153,7 @@ int ReadFromFile (char*  file) {
 			strcpy(cur->targetInfIP,token);
 			//cur->targetInfIP = token;
 			cur->myInf = line_cnt;
+			cur->up=1;
 			if(line_cnt==1){ // Check to see if the head of the interface list has been populated
 				
 				head = cur; // If head has not been set, set current to head
@@ -248,6 +250,7 @@ void ReceiverThread(RipEntry rip, Neighbors neighbor) {
 
 void HandleUserInput() {
 	char* input = (char*)malloc(MAX_MSG_LENGTH);
+	int restart=0;
 	while(1) {
 		fgets (input, MAX_MSG_LENGTH, stdin);
 		char* first = calloc(strlen(input)+1, sizeof(char));
@@ -257,15 +260,62 @@ void HandleUserInput() {
 			printf("3");
 		}
 		else if(strcmp(input,"ifconfig")==0) {
-			printf("4");
+			inf_entry_t* runner=infHead;
+			while (runner!=NULL) {
+				if (runner->up==1) {
+					printf("%d\t%s\tup\n",runner->myInf,runner->myInfIP);
+				}
+				else {
+					printf("%d\t%s\tdown\n",runner->myInf,runner->myInfIP);
+				}
+				runner=runner->next;
+			}
 		}
 		else {
 			first=strtok(first," ");
 			if(strcmp(first,"down")==0) {
-				printf("1");
+				first=strtok(NULL," ");
+				int id = (int)atoi(first);
+				if (id==0) {
+					printf("invalid interface\n");
+					restart=1;
+				}
+				inf_entry_t* runner=infHead;
+				while (runner!=NULL) {
+					if (runner->myInf==id) {
+						runner->up=0;
+						printf("interface %d down\n",id);
+						restart=1;
+					}
+					runner=runner->next;
+				}
+				if (restart==1) {
+					restart=0;
+					continue;
+				}
+				printf("Interface %d not found\n",id);
 			}
 			else if(strcmp(first,"up")==0) {
-				printf("2");
+				first=strtok(NULL," ");
+				int id = (int)atoi(first);
+				if (id==0) {
+					printf("invalid interface\n");
+					restart=1;
+				}
+				inf_entry_t* runner=infHead;
+				while (runner!=NULL) {
+					if (runner->myInf==id) {
+						runner->up=1;
+						printf("interface %d up\n",id);
+						restart=1;
+					}
+					runner=runner->next;
+				}
+				if (restart==1) {
+					restart=0;
+					continue;
+				}
+				printf("Interface %d not found\n",id);
 			}
 			else if(strcmp(first,"send")==0) {
 				printf("%s",input);
