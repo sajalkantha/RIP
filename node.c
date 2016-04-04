@@ -383,6 +383,7 @@ void* listenForInput() {
                 					if (strcmp(isender->targetInfIP,inet_ntoa(ripPacket->sourceIP))==0) {
                 						printf("!!!!!!!!%s update timestamp\n",isender->targetInfIP);
                 						runner->timestamp=current_timestamp();
+                						runner->cost=1;
                 					}
                 					else {
                 						printf("!!!!!!!%s:%s received indirect rip, no time update\n",isender->targetInfIP,runner->destIP);
