@@ -28,6 +28,7 @@
 #define MAX_IP_LEN (30)
 #define BUFSIZE 2048
 #define TIMEOUT_LEN (12000)
+#define UDP_PROTO (17)
 /*#include "rlib.h"*/
 
 
@@ -85,7 +86,7 @@ struct rip_packet {
 	uint16_t fragoffset;
 	uint8_t ttl;
 	uint8_t protocol;
-	uint8_t cksum;
+	uint16_t cksum;
 	struct in_addr sourceIP;
 	struct in_addr destIP;
 	uint32_t options_and_padding;
@@ -400,9 +401,24 @@ void* listenForInput() {
         //recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
         //printf("received %d bytes\n", recvlen);
         if (recvlen > 0) {
+        	printf("packet: destIP:%s\n",inet_ntoa(ripPacket->destIP));
+        	printf("packet: sourceIP:%s\n",inet_ntoa(ripPacket->sourceIP));
+        	printf("packet: id:%d\n",ripPacket->id);
+        	printf("packet: opotions and padding:%d\n",ripPacket->options_and_padding);
+        	printf("packet: protocol:%d\n",ripPacket->protocol);
+        	printf("packet: tos:%d\n",ripPacket->tos);
+        	printf("packet: totallen:%d\n",ripPacket->totallen);
+        	printf("packet: ttl:%d\n",ripPacket->ttl);
+        	printf("packet: version and headerlen:%d\n",ripPacket->version_and_headerlen);
+
         	if (findInfEntry(ripPacket->destIP)->up) {
                 //buf[recvlen] = 0;
                 printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
+                if (ripPacket->protocol==UDP_PROTO) {
+                	printf("%s",(char*)&ripPacket->ripPayload);
+                	fflush(stdout);
+                }
+                else if (ripPacket->protocol==200) {
                 printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
                 if (ripPacket->ripPayload.command==1) {
                 	printf("just a received a rip request, sending triggered response\n");
@@ -476,6 +492,8 @@ void* listenForInput() {
                 		arunner->next=rip;
                 		arunner=arunner->next;
                 	}
+        			fflush(stdout);
+                }
                 }
         	}
         }
@@ -526,6 +544,49 @@ void* ReceiverThread() {
 	}
 }
 
+void sendMessageTo(int infId, char* message) {
+	inf_entry_t* runner = infHead;
+	rip_packet_t* udpPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
+	udpPacket->version_and_headerlen=0x45;
+	udpPacket->tos=0;
+	udpPacket->totallen=strlen(message);
+	udpPacket->id=0;
+	udpPacket->fragoffset=0;
+	udpPacket->ttl=16;
+	udpPacket->protocol=UDP_PROTO;
+	udpPacket->cksum=0;
+	inet_aton(runner->myInfIP,&udpPacket->sourceIP);
+	inet_aton(runner->targetInfIP,&udpPacket->destIP);
+	udpPacket->options_and_padding=0;
+
+	printf("start memcpy\n");
+	memcpy(&udpPacket->ripPayload,message,strlen(message));
+	printf("end memcpy\n");
+
+	udpPacket->cksum=ip_sum((char*)udpPacket,sizeof(rip_packet_t));
+	while (runner!=NULL) {
+		if (runner->myInf==infId && runner->up) {
+			if (sendto(runner->socket, udpPacket, sizeof(rip_packet_t), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
+				perror("Send error");
+				return;
+			}
+			return;
+		}
+		runner=runner->next;
+	}
+}
+
+void sendMessage(char* targetIP, char* message) {
+	rip_entry_t* runner = ripHead;
+	while (runner!=NULL) {
+		if (strcmp(runner->destIP,targetIP)==0) {
+			sendMessageTo(runner->nextHop,message);
+			return;
+		}
+		runner=runner->next;
+	}
+	printf("IP address not found...\n");
+}
 
 void HandleUserInput() {
 	char* input = (char*)malloc(MAX_MSG_LENGTH);
@@ -603,7 +664,13 @@ void HandleUserInput() {
 				printf("Interface %d not found\n",id);
 			}
 			else if(strcmp(first,"send")==0) {
-				printf("%s",input);
+				first=strtok(NULL," ");
+				char* destIP = (char*)malloc(strlen(first));
+				strcpy(destIP,first);
+				char* substr = strstr(input,first);
+				char* message = substr+strlen(first)+1;
+				printf("%s",message);
+				sendMessage(destIP,message);
 			}
 		}
 	}
