@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <stdint.h>
 #include <arpa/inet.h>
+#include "ipsum.c"
 /*#include "UDPIPInterface.h"
 #include "UDPSocket.h"
 #include "IPRIPInterface.h"*/
@@ -254,7 +255,7 @@ void sendRipRequests() {
 		ripPacket->options_and_padding=0;
 		ripPacket->ripPayload.command=1;
 		ripPacket->ripPayload.num_entries=0;
-
+		ripPacket->cksum=ip_sum((char*)ripPacket,sizeof(rip_packet_t));
 		if (runner->up) {
 			fflush(stdout);
 			//char *my_message = "this is a test message";
@@ -302,6 +303,7 @@ void sendRipUpdates() {
 			counter++;
 		}
 		ripPacket->ripPayload.data[counter].cost=-1;
+		ripPacket->cksum=ip_sum((char*)ripPacket,sizeof(rip_packet_t));
 		//send packet
 		if (runner->up) {
 			printf("sending...,%d",runner->socket);
