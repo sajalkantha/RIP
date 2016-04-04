@@ -235,6 +235,50 @@ void CreateListenSocket(char* IP, uint16_t port) {
 	//listen(sock,MAX_BACK_LOG); //dont need for udp?
 }
 
+void sendRipUpdates() {
+	inf_entry_t* runner = infHead;
+	rip_entry_t* ripRunner;
+	rip_packet_t* ripPacket;
+	while (!(runner==NULL)) {
+		ripRunner = ripHead;
+		ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
+		ripPacket->version_and_headerlen=0;
+		ripPacket->tos=0;
+		ripPacket->totallen=6*32*+32+64*numEntries;
+		ripPacket->id=0;
+		ripPacket->fragoffset=0;
+		ripPacket->ttl=16;
+		ripPacket->protocol=200;
+		ripPacket->cksum=0;
+		inet_aton(runner->myInfIP,&ripPacket->sourceIP);
+		inet_aton(runner->targetInfIP,&ripPacket->destIP);
+		ripPacket->options_and_padding=0;
+		ripPacket->ripPayload.command=2;
+		ripPacket->ripPayload.num_entries=numEntries;
+		int counter=0;
+		while(!(ripRunner==NULL)) {
+			ripPacket->ripPayload.data[counter].cost=ripRunner->cost;
+			inet_aton(ripRunner->destIP,&ripPacket->ripPayload.data[counter].address);
+			ripRunner=ripRunner->next;
+			counter++;
+		}
+		ripPacket->ripPayload.data[counter].cost=-1;
+		//send packet
+		if (runner->up) {
+			printf("sending...,%d",runner->socket);
+			fflush(stdout);
+			//char *my_message = "this is a test message";
+			//if (sendto(runner->socket, my_message, strlen(my_message), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
+			if (sendto(runner->socket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
+				perror("Send error");
+				return;
+			}
+			//sleep(1);
+		}
+		runner=runner->next;
+	}
+}
+
 void* SenderThread() {
 	int sock;
 	//struct sockaddr_in server_addr;
@@ -256,62 +300,36 @@ void* SenderThread() {
 		}*/
 		runner=runner->next;
 	}
-	rip_entry_t* ripRunner;
-	rip_packet_t* ripPacket;
 	while(1) {
-		runner = infHead;
-		while (!(runner==NULL)) {
-			ripRunner = ripHead;
-			ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
-			ripPacket->version_and_headerlen=0;
-			ripPacket->tos=0;
-			ripPacket->totallen=6*32*+32+64*numEntries;
-			ripPacket->id=0;
-			ripPacket->fragoffset=0;
-			ripPacket->ttl=16;
-			ripPacket->protocol=200;
-			ripPacket->cksum=0;
-			inet_aton(runner->myInfIP,&ripPacket->sourceIP);
-			inet_aton(runner->targetInfIP,&ripPacket->destIP);
-			ripPacket->options_and_padding=0;
-			ripPacket->ripPayload.command=2;
-			ripPacket->ripPayload.num_entries=numEntries;
-			int counter=0;
-			while(!(ripRunner==NULL)) {
-				ripPacket->ripPayload.data[counter].cost=ripRunner->cost;
-				inet_aton(ripRunner->destIP,&ripPacket->ripPayload.data[counter].address);
-				ripRunner=ripRunner->next;
-				counter++;
-			}
-			ripPacket->ripPayload.data[counter].cost=-1;
-			//send packet
-			if (runner->up) {
-				printf("sending...,%d",runner->socket);
-				fflush(stdout);
-				//char *my_message = "this is a test message";
-				//if (sendto(runner->socket, my_message, strlen(my_message), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
-				if (sendto(runner->socket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
-					perror("Send error");
-					return;
-				}
-				//sleep(1);
-			}
-			runner=runner->next;
-		}
+		sendRipUpdates();
 		sleep(5);
 	}
 }
 
+inf_entry_t* findTargetInfEntry(struct in_addr destIP) {
+	inf_entry_t* runner = infHead;
+	printf("!!lookup %s\n",inet_ntoa(destIP));
+	while(runner!=NULL) {
+		if (strcmp(runner->targetInfIP,inet_ntoa(destIP))==0) {
+			return runner;
+		}
+		runner=runner->next;
+	}
+	printf("returning null inf\n");
+	return 0;
+}
+
 inf_entry_t* findInfEntry(struct in_addr destIP) {
 	inf_entry_t* runner = infHead;
+	printf("!!lookup %s\n",inet_ntoa(destIP));
 	while(runner!=NULL) {
 		if (strcmp(runner->myInfIP,inet_ntoa(destIP))==0) {
 			return runner;
 		}
 		runner=runner->next;
 	}
-	//printf("returning null\n");
-	return NULL;
+	printf("returning null inf\n");
+	return 0;
 }
 
 rip_entry_t* findRipEntry(struct in_addr sourceIP) {
@@ -326,7 +344,7 @@ rip_entry_t* findRipEntry(struct in_addr sourceIP) {
 		runner=runner->next;
 	}
 	//printf("returning null\n");
-	return NULL;
+	return 0;
 }
 
 void* listenForInput() {
@@ -360,7 +378,19 @@ void* listenForInput() {
                 			printf("%s match %s\n", runner->destIP, inet_ntoa(ripPacket->ripPayload.data[i].address));
                 			rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
                 			if (runner->timestamp!=0) {
-                				runner->timestamp=current_timestamp();
+                				inf_entry_t* isender = findTargetInfEntry(ripPacket->ripPayload.data[i].address);
+                				if (isender!=NULL) {
+                					if (strcmp(isender->targetInfIP,inet_ntoa(ripPacket->sourceIP))==0) {
+                						printf("!!!!!!!!%s update timestamp\n",isender->targetInfIP);
+                						runner->timestamp=current_timestamp();
+                					}
+                					else {
+                						printf("!!!!!!!%s:%s received indirect rip, no time update\n",isender->targetInfIP,runner->destIP);
+                					}
+                				}
+                				else {
+                					printf("!!!!!not neighbor, update\n");
+                				}
                 			}
                 			if (ripPacket->ripPayload.data[i].cost+sender->cost<runner->cost) {
                 				printf("rip updated");
@@ -420,7 +450,10 @@ void* ReceiverThread() {
 				long elapsedTime = currentTime - rRunner->timestamp;
 				if (elapsedTime>TIMEOUT_LEN) {
 					printf("...rip entry (dest %s) timeout...\n",rRunner->destIP);
-					if (prev!=NULL) {
+					rRunner->cost=16;
+					printf("sending triggered update\n");
+					sendRipUpdates();
+					/*if (prev!=NULL) {
 						prev->next=rRunner->next;
 						rRunner=prev->next;
 						continue;
@@ -429,7 +462,7 @@ void* ReceiverThread() {
 						ripHead=ripHead->next;
 						rRunner=ripHead;
 						continue;
-					}
+					}*/
 				}
 			}
 			prev=rRunner;
@@ -450,7 +483,7 @@ void HandleUserInput() {
 		if(strcmp(input,"routes")==0) {
 			rip_entry_t* runner=ripHead;
 			while(runner!=NULL) {
-				if (runner->cost!=0) {
+				if (runner->cost!=-2) {
 					printf("%s\t%d\t%d\n",runner->destIP,runner->nextHop,runner->cost);
 				}
 				runner=runner->next;
