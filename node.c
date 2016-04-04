@@ -257,7 +257,12 @@ void sendRipUpdates() {
 		ripPacket->ripPayload.num_entries=numEntries;
 		int counter=0;
 		while(!(ripRunner==NULL)) {
-			ripPacket->ripPayload.data[counter].cost=ripRunner->cost;
+			if (runner->myInf!=ripRunner->nextHop) {
+				ripPacket->ripPayload.data[counter].cost=16;
+			}
+			else {
+				ripPacket->ripPayload.data[counter].cost=ripRunner->cost;
+			}
 			inet_aton(ripRunner->destIP,&ripPacket->ripPayload.data[counter].address);
 			ripRunner=ripRunner->next;
 			counter++;
