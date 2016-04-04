@@ -21,7 +21,7 @@
 #include <pthread.h>
 
 #define MAX_BACK_LOG (5)
-#define MAX_STATES 128
+#define MAX_STATES 64
 #define MAX_MSG_LENGTH (1300)
 #define MAX_LINE_SIZE (1000)
 #define MAX_IP_LEN (30)
@@ -208,7 +208,7 @@ void initializeRoutingTable() {
 	while (runner!=NULL) {
 		rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
 		rip->destIP = runner->myInfIP;
-		rip->nextHop = runner->myInf;
+		rip->nextHop = 0;
 		rip->cost = 0;
 		rip->timestamp = 0;
 		rip->next = NULL;
@@ -235,6 +235,40 @@ void CreateListenSocket(char* IP, uint16_t port) {
 	//listen(sock,MAX_BACK_LOG); //dont need for udp?
 }
 
+void sendRipRequests() {
+	printf("after sleep, sending rip requests\n");
+	inf_entry_t* runner = infHead;
+	rip_packet_t* ripPacket;
+	while (!(runner==NULL)) {
+		ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
+		ripPacket->version_and_headerlen=0;
+		ripPacket->tos=0;
+		ripPacket->totallen=6*32*+32+64*numEntries;
+		ripPacket->id=0;
+		ripPacket->fragoffset=0;
+		ripPacket->ttl=16;
+		ripPacket->protocol=200;
+		ripPacket->cksum=0;
+		inet_aton(runner->myInfIP,&ripPacket->sourceIP);
+		inet_aton(runner->targetInfIP,&ripPacket->destIP);
+		ripPacket->options_and_padding=0;
+		ripPacket->ripPayload.command=1;
+		ripPacket->ripPayload.num_entries=0;
+
+		if (runner->up) {
+			fflush(stdout);
+			//char *my_message = "this is a test message";
+			//if (sendto(runner->socket, my_message, strlen(my_message), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
+			if (sendto(runner->socket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
+				perror("Send request error");
+				return;
+			}
+			//sleep(1);
+		}
+		runner=runner->next;
+	}
+}
+
 void sendRipUpdates() {
 	inf_entry_t* runner = infHead;
 	rip_entry_t* ripRunner;
@@ -257,7 +291,7 @@ void sendRipUpdates() {
 		ripPacket->ripPayload.num_entries=numEntries;
 		int counter=0;
 		while(!(ripRunner==NULL)) {
-			if (runner->myInf!=ripRunner->nextHop) {
+			if (runner->myInf==ripRunner->nextHop) {
 				ripPacket->ripPayload.data[counter].cost=16;
 			}
 			else {
@@ -290,7 +324,7 @@ void* SenderThread() {
 	inf_entry_t* runner = infHead;
 	while (runner!=NULL) {
 		if ((sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-			printf("errof creating socket");
+			printf("error creating socket");
 			continue;
 		}
 		runner->socket=sock;
@@ -368,6 +402,11 @@ void* listenForInput() {
                 //buf[recvlen] = 0;
                 printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
                 printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
+                if (ripPacket->ripPayload.command==1) {
+                	printf("just a received a rip request, sending triggered response\n");
+                	sendRipUpdates();
+                	continue;
+                }
                 int i;
                 for (i=0;i<MAX_STATES;i++) {
                 	printf("entry%d\n",i);
@@ -395,13 +434,21 @@ void* listenForInput() {
                 					}
                 				}
                 				else {
-                					printf("!!!!!not neighbor, update\n");
+                					printf("!!!!!not neighbor, update ts\n");
+            						runner->timestamp=current_timestamp();
                 				}
                 			}
-                			if (ripPacket->ripPayload.data[i].cost+sender->cost<runner->cost) {
+                			printf("%d+%d<%d?\n",ripPacket->ripPayload.data[i].cost,sender->cost,runner->cost);
+                			printf("%s\n",inet_ntoa(ripPacket->ripPayload.data[i].address));
+                			inf_entry_t* infOfSender = findTargetInfEntry(ripPacket->sourceIP);
+                			if (ripPacket->ripPayload.data[i].cost+sender->cost<runner->cost) { //new path has shorter cost
                 				printf("rip updated");
                 				runner->cost=(ripPacket->ripPayload.data[i].cost+sender->cost);
                 				runner->nextHop=sender->nextHop;
+                			}
+                			else if (runner->nextHop==infOfSender->myInf) { //old path cost changed
+                				printf("path cost changed %d/%d",runner->nextHop,infOfSender->myInf);
+                				runner->cost=(ripPacket->ripPayload.data[i].cost+sender->cost);
                 			}
                 			new=0;
                 			break;
@@ -586,6 +633,8 @@ int main(int argc, char* argv[]) {
 	print_debug();
 	pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
 	pthread_create(&rThread, NULL, &ReceiverThread, NULL);
+	sleep(1);
+	sendRipRequests();
 	HandleUserInput(NULL,NULL,NULL);
 	return 0;
 }
