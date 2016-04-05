@@ -575,6 +575,7 @@ void* listenForInput() {
                 								printf("!!!!!!!!%s update timestamp\n",isender->targetInfIP);
                 								runner->timestamp=current_timestamp();
                 								runner->cost=1;
+                								runner->nextHop=isender->myInf;
                 							}
                 							else {
                 								printf("!!!!!!!%s:%s received indirect rip, no time update\n",isender->targetInfIP,runner->destIP);
@@ -591,7 +592,12 @@ void* listenForInput() {
                 					if (ripPacket->ripPayload.data[i].cost+sender->cost<runner->cost) { //new path has shorter cost
                 						printf("rip updated");
                 						runner->cost=(ripPacket->ripPayload.data[i].cost+sender->cost);
-                						runner->nextHop=sender->nextHop;
+                						if (infOfSender!=NULL) {
+                							runner->nextHop=infOfSender->myInf;
+                						}
+                						else {
+                							runner->nextHop=sender->nextHop;
+                						}
                 					}
                 					else if (runner->nextHop==infOfSender->myInf) { //old path cost changed
                 						printf("path cost changed %d/%d",runner->nextHop,infOfSender->myInf);
@@ -664,8 +670,11 @@ void* ReceiverThread() {
 					strcpy(temp,fitIpToRef(rRunner->destIP));
 					inet_aton(temp, &from);
 					while(rrRunner!=NULL) {
-						if (rrRunner->nextHop==findTargetInfEntry(from)->myInf) {
-							rrRunner->cost=16;
+						inf_entry_t* interf = findTargetInfEntry(from);
+						if (interf!=NULL) {
+							if (rrRunner->nextHop==interf->myInf) {
+								rrRunner->cost=16;
+							}
 						}
 						rrRunner=rrRunner->next;
 					}
