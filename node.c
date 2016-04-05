@@ -420,6 +420,7 @@ void* listenForInput() {
                 printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
                 if (ripPacket->protocol==UDP_PROTO) {
                 	printf("udp payload length=%d\n", (int)strlen((char*)&ripPacket->ripPayload));
+                	printf("fragoffset=%d",ripPacket->fragoffset);
                 	if (ripPacket->fragoffset>=8192) { //message fragmented
                 		int offset = ripPacket->fragoffset % 8192;
                 		memcpy(msgPointer+8*offset,&ripPacket->ripPayload,MTU);
