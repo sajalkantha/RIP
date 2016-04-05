@@ -374,9 +374,9 @@ void* SenderThread() {
 
 inf_entry_t* findTargetInfEntry(struct in_addr destIP) {
 	inf_entry_t* runner = infHead;
-	printf("!!lookup %s\n",inet_ntoa(destIP));
 	char* temp = (char*)malloc(MAX_IP_LEN);
 	strcpy(temp,fitIpToRef(inet_ntoa(destIP)));
+	printf("!!targlookup %s\n",temp);
 	while(runner!=NULL) {
 		if (strcmp(runner->targetInfIP,temp)==0) {
 			return runner;
@@ -391,7 +391,7 @@ inf_entry_t* findInfEntry(struct in_addr destIP) {
 	inf_entry_t* runner = infHead;
 	char* temp = (char*)malloc(MAX_IP_LEN);
 	strcpy(temp,fitIpToRef(inet_ntoa(destIP)));
-	printf("!!lookup %s\n",temp);
+	printf("!!reglookup %s\n",temp);
 	while(runner!=NULL) {
 		printf("%s:%s\n",runner->myInfIP,temp);
 		if (strcmp(runner->myInfIP,temp)==0) {
@@ -420,97 +420,147 @@ rip_entry_t* findRipEntry(struct in_addr sourceIP) {
 	return 0;
 }
 
+void forwardpacket(int infId, rip_packet_t* packet) {
+	packet->ttl-=1;
+	packet->cksum=ip_sum((char*)packet,sizeof(rip_packet_t));
+	inf_entry_t* runner = infHead;
+	while (runner!=NULL) {
+		if (runner->myInf==infId && runner->up) {
+			char* temp = (char*)malloc(MAX_IP_LEN);
+			strcpy(temp,fitIpToRef(runner->myInfIP));
+			inet_aton(temp,&packet->sourceIP);
+			if (sendto(runner->socket, packet, sizeof(rip_packet_t), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
+				perror("Send error");
+				return;
+			}
+			return;
+		}
+		runner=runner->next;
+	}
+}
+
 void* listenForInput() {
 	buffer = (char*)malloc(MAX_MSG_LENGTH);
-    //char* totalline = "W";
-    char* msgPointer = buffer;
+	//char* totalline = "W";
+	char* msgPointer = buffer;
 	while(1) {
-        /*unsigned char buf[BUFSIZE];     /* receive buffer */
-        int recvlen;                    /* # bytes received */
-        struct sockaddr_in remaddr;     /* remote address */
-        socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
-        rip_packet_t* ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
-        //printf("waiting to read...\n");
+		/*unsigned char buf[BUFSIZE];     /* receive buffer */
+		int recvlen;                    /* # bytes received */
+		struct sockaddr_in remaddr;     /* remote address */
+		socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
+		rip_packet_t* ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
+		printf("waiting to read...\n");
 		//printf("(preprepre)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
-        recvlen = recvfrom(listenSocket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr *)&remaddr, &addrlen);
+		recvlen = recvfrom(listenSocket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr *)&remaddr, &addrlen);
 		//printf("(prepostrecvfrom)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
-        //recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
-        //printf("received %d bytes\n", recvlen);
-        if (recvlen > 0) {
-        	printf("packet: destIP:%s\n",fitIpToRef(inet_ntoa(ripPacket->destIP)));
-        	printf("packet: sourceIP:%s\n",fitIpToRef(inet_ntoa(ripPacket->sourceIP)));
-        	printf("packet: id:%d\n",ripPacket->id);
-        	printf("packet: opotions and padding:%d\n",ripPacket->options_and_padding);
-        	printf("packet: protocol:%d\n",ripPacket->protocol);
-        	printf("packet: tos:%d\n",ripPacket->tos);
-        	printf("packet: totallen:%d\n",ripPacket->totallen);
-        	printf("packet: ttl:%d\n",ripPacket->ttl);
-        	printf("packet: fragoffset:%d\n",ripPacket->fragoffset);
-        	printf("packet: version and headerlen:%d\n",ripPacket->version_and_headerlen);
+		//recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
+		//printf("received %d bytes\n", recvlen);
+		if (recvlen > 0) {
+			printf("packet: destIP:%s\n",fitIpToRef(inet_ntoa(ripPacket->destIP)));
+			printf("packet: sourceIP:%s\n",fitIpToRef(inet_ntoa(ripPacket->sourceIP)));
+			printf("packet: id:%d\n",ripPacket->id);
+			printf("packet: opotions and padding:%d\n",ripPacket->options_and_padding);
+			printf("packet: protocol:%d\n",ripPacket->protocol);
+			printf("packet: tos:%d\n",ripPacket->tos);
+			printf("packet: totallen:%d\n",ripPacket->totallen);
+			printf("packet: ttl:%d\n",ripPacket->ttl);
+			printf("packet: fragoffset:%d\n",ripPacket->fragoffset);
+			printf("packet: version and headerlen:%d\n",ripPacket->version_and_headerlen);
 
-    		//printf("(prepre)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
-
-        	if (findInfEntry(ripPacket->destIP)->up) {
-                //buf[recvlen] = 0;
-                printf("received packet, source ip: %s\n", fitIpToRef(inet_ntoa(ripPacket->sourceIP)));
-                if (ripPacket->protocol==UDP_PROTO) {
-                	printf("udp payload length=%d\n", (int)strlen((char*)&ripPacket->ripPayload));
-                	printf("fragoffset=%d\n",ripPacket->fragoffset);
-                	if ((ripPacket->fragoffset)>=8192) { //message fragmented
-                		int offset = ripPacket->fragoffset % 8192;
-                		//printf("8*offset=%d\n",8*offset);
-                		memcpy(buffer+8*offset,&ripPacket->ripPayload,MTU);
-                		//printf("a8*offset=%d\n",8*offset);
-                		//char* oldtotalline = totalline;
-                		//printf("strlen(old:payload) %d:%d\n",strlen(oldtotalline),strlen((char*)&ripPacket->ripPayload));
-                		//totalline = (char*)malloc(strlen(oldtotalline)+strlen((char*)&ripPacket->ripPayload));
-                		//printf("oldtotalline:strlen %s:%d\n",oldtotalline,strlen(oldtotalline));
-                		//memcpy(totalline,oldtotalline,strlen(oldtotalline)-1);
-                		//printf("d8*offset=%d\n",8*offset);
-                		//memcpy(totalline+strlen(oldtotalline)-1,&ripPacket->ripPayload, strlen((char*)&ripPacket->ripPayload));
-                		//printf("e8*offset=%d\n",8*offset);
-                		//totalline[strlen(oldtotalline) + strlen((char*)&ripPacket->ripPayload)] = '\0';
-                		//printf("buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
-                	}
-                	else {
-                		int offset = ripPacket->fragoffset % 8192;
-                		//printf("(pre)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
-                		memcpy(buffer+8*offset,&ripPacket->ripPayload,ripPacket->totallen);
-                		memcpy(buffer+8*offset+ripPacket->totallen, "\0", 1);
-                		//char* oldtotalline = totalline;
-                		//totalline = (char*)malloc(strlen(oldtotalline)+strlen((char*)&ripPacket->ripPayload));
-                		//memcpy(totalline,oldtotalline,strlen(oldtotalline)-1);
-                		//memcpy(totalline+strlen(oldtotalline),&ripPacket->ripPayload, strlen((char*)&ripPacket->ripPayload));
-                		//totalline[strlen(oldtotalline) + strlen((char*)&ripPacket->ripPayload)] = '\0';
-                		//printf("payload:%s\n",&ripPacket->ripPayload);
-                		printf("!!!!!!!!!printing message...");
-                		printf("%s\n",buffer);
-                		free(buffer);
-                		buffer = (char*)malloc(MAX_MSG_LENGTH);
-                		msgPointer = buffer;
-                		fflush(stdout);
-                	}
-                }
-                else if (ripPacket->protocol==200) {
-                	printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
-                	printf("!!!!!!!!!%d\n", ripPacket->ripPayload.command);
-                	if (ripPacket->ripPayload.command==1) {
-                		printf("just a received a rip request, sending triggered response\n");
-                		sendRipUpdates();
-                		continue;
-                	}
-                	else if (ripPacket->ripPayload.command==2) {
-                		int i;
-                		for (i=0;i<MAX_STATES;i++) {
-                			printf("entry%d\n",i);
-                			if (ripPacket->ripPayload.data[i].cost==-1) {
-                				printf("nulled%d\n",i);
-                				break;
-                			}
-                			rip_entry_t* runner = ripHead;
-                			int new=1;
-                			char* temp = (char*)malloc(MAX_IP_LEN);
-                			while (runner!=NULL) {
+			//printf("(prepre)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
+			int infFound=0;
+			inf_entry_t* myInf = findInfEntry(ripPacket->destIP);
+			if (myInf!=NULL) {
+				infFound=1;
+			}
+			if (infFound==0) {
+				myInf=findTargetInfEntry(ripPacket->sourceIP);
+				infFound=1;
+			}
+			if (infFound==0) {
+				printf("###interface not found\n");
+			}
+			if (myInf->up) {
+				//buf[recvlen] = 0;
+				printf("received packet, source ip: %s\n", fitIpToRef(inet_ntoa(ripPacket->sourceIP)));
+				if (ripPacket->protocol==UDP_PROTO) {
+					printf("udp payload length=%d\n", (int)strlen((char*)&ripPacket->ripPayload));
+					printf("fragoffset=%d\n",ripPacket->fragoffset);
+					if (findRipEntry(ripPacket->destIP)->cost==0) {
+						printf("#### my message #####");
+						if ((ripPacket->fragoffset)>=8192) { //message fragmented
+							int offset = ripPacket->fragoffset % 8192;
+							//printf("8*offset=%d\n",8*offset);
+							memcpy(buffer+8*offset,&ripPacket->ripPayload,MTU);
+							//printf("a8*offset=%d\n",8*offset);
+							//char* oldtotalline = totalline;
+							//printf("strlen(old:payload) %d:%d\n",strlen(oldtotalline),strlen((char*)&ripPacket->ripPayload));
+							//totalline = (char*)malloc(strlen(oldtotalline)+strlen((char*)&ripPacket->ripPayload));
+							//printf("oldtotalline:strlen %s:%d\n",oldtotalline,strlen(oldtotalline));
+							//memcpy(totalline,oldtotalline,strlen(oldtotalline)-1);
+							//printf("d8*offset=%d\n",8*offset);
+							//memcpy(totalline+strlen(oldtotalline)-1,&ripPacket->ripPayload, strlen((char*)&ripPacket->ripPayload));
+							//printf("e8*offset=%d\n",8*offset);
+							//totalline[strlen(oldtotalline) + strlen((char*)&ripPacket->ripPayload)] = '\0';
+							//printf("buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
+						}
+						else {
+							int offset = ripPacket->fragoffset % 8192;
+							//printf("(pre)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
+							memcpy(buffer+8*offset,&ripPacket->ripPayload,ripPacket->totallen);
+							memcpy(buffer+8*offset+ripPacket->totallen, "\0", 1);
+							//char* oldtotalline = totalline;
+							//totalline = (char*)malloc(strlen(oldtotalline)+strlen((char*)&ripPacket->ripPayload));
+							//memcpy(totalline,oldtotalline,strlen(oldtotalline)-1);
+							//memcpy(totalline+strlen(oldtotalline),&ripPacket->ripPayload, strlen((char*)&ripPacket->ripPayload));
+							//totalline[strlen(oldtotalline) + strlen((char*)&ripPacket->ripPayload)] = '\0';
+							//printf("payload:%s\n",&ripPacket->ripPayload);
+							printf("!!!!!!!!!printing message...");
+							printf("%s\n",buffer);
+							free(buffer);
+							buffer = (char*)malloc(MAX_MSG_LENGTH);
+							msgPointer = buffer;
+							fflush(stdout);
+						}
+					}
+					else { //keep forwarding
+						int sent = 0;
+						rip_entry_t* runner = ripHead;
+						char* temp = (char*)malloc(MAX_IP_LEN);
+						strcpy(temp,fitIpToRef(inet_ntoa(ripPacket->destIP)));
+						while (runner!=NULL) {
+							if (strcmp(runner->destIP,temp)==0) {
+								forwardpacket(runner->nextHop,ripPacket);
+								sent=1;
+								break;
+							}
+							runner=runner->next;
+						}
+						if (send==0) {
+							printf("IP address not found...\n");
+						}
+					}
+				}
+				else if (ripPacket->protocol==200) {
+					printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
+					printf("!!!!!!!!!%d\n", ripPacket->ripPayload.command);
+					if (ripPacket->ripPayload.command==1) {
+						printf("just a received a rip request, sending triggered response\n");
+						sendRipUpdates();
+						continue;
+					}
+					else if (ripPacket->ripPayload.command==2) {
+						int i;
+						for (i=0;i<MAX_STATES;i++) {
+							printf("entry%d\n",i);
+							if (ripPacket->ripPayload.data[i].cost==-1) {
+								printf("nulled%d\n",i);
+								break;
+							}
+							rip_entry_t* runner = ripHead;
+							int new=1;
+							char* temp = (char*)malloc(MAX_IP_LEN);
+							while (runner!=NULL) {
                 				printf("%s:%s\n",runner->destIP,fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
     							strcpy(temp,fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
                 				if (strcmp(runner->destIP,temp)==0) {
@@ -627,7 +677,7 @@ void* ReceiverThread() {
 	}
 }
 
-void sendMessageFragTo(int infId, char* message, int fragOffset) {
+void sendMessageFragTo(int infId, char* message, char* endIP, int fragOffset) {
 	inf_entry_t* runner = infHead;
 	rip_packet_t* udpPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
 	udpPacket->version_and_headerlen=0x45;
@@ -642,7 +692,7 @@ void sendMessageFragTo(int infId, char* message, int fragOffset) {
 	char* temp = (char*)malloc(MAX_IP_LEN);
 	strcpy(temp,fitIpToRef(runner->myInfIP));
 	inet_aton(temp,&udpPacket->sourceIP);
-	strcpy(temp,fitIpToRef(runner->targetInfIP));
+	strcpy(temp,fitIpToRef(endIP));
 	inet_aton(temp,&udpPacket->destIP);
 	udpPacket->options_and_padding=0;
 
@@ -663,13 +713,13 @@ void sendMessageFragTo(int infId, char* message, int fragOffset) {
 	}
 }
 
-void sendMessageTo(int infId, char* message) {
+void sendMessageTo(int infId, char* message, char* endIP) {
 	int tooLarge=0;
 	int fragOffset = 0;
 	while (strlen(message)>MTU) {
 		printf("length left=%d",(int)strlen(message));
 		tooLarge=1;
-		sendMessageFragTo(infId, message, fragOffset);
+		sendMessageFragTo(infId, message, endIP, fragOffset);
 		message=message+MTU;
 		fragOffset+=(MTU/8);
 	}
@@ -689,7 +739,7 @@ void sendMessageTo(int infId, char* message) {
 	char* temp = (char*)malloc(MAX_IP_LEN);
 	strcpy(temp,fitIpToRef(runner->myInfIP));
 	inet_aton(temp,&udpPacket->sourceIP);
-	strcpy(temp,fitIpToRef(runner->targetInfIP));
+	strcpy(temp,fitIpToRef(endIP));
 	inet_aton(temp,&udpPacket->destIP);
 	udpPacket->options_and_padding=0;
 
@@ -714,7 +764,7 @@ void sendMessage(char* targetIP, char* message) {
 	rip_entry_t* runner = ripHead;
 	while (runner!=NULL) {
 		if (strcmp(runner->destIP,targetIP)==0) {
-			sendMessageTo(runner->nextHop,message);
+			sendMessageTo(runner->nextHop,message, targetIP);
 			return;
 		}
 		runner=runner->next;
