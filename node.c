@@ -378,6 +378,7 @@ inf_entry_t* findTargetInfEntry(struct in_addr destIP) {
 	strcpy(temp,fitIpToRef(inet_ntoa(destIP)));
 	printf("!!targlookup %s\n",temp);
 	while(runner!=NULL) {
+		printf("%s:%s\n",runner->myInfIP,temp);
 		if (strcmp(runner->targetInfIP,temp)==0) {
 			return runner;
 		}
@@ -657,6 +658,17 @@ void* ReceiverThread() {
 				if (elapsedTime>TIMEOUT_LEN) {
 					printf("...rip entry (dest %s) timeout...\n",rRunner->destIP);
 					rRunner->cost=16;
+					rip_entry_t* rrRunner = ripHead;
+					struct in_addr from;
+					char* temp = (char*)malloc(MAX_IP_LEN);
+					strcpy(temp,fitIpToRef(rRunner->destIP));
+					inet_aton(temp, &from);
+					while(rrRunner!=NULL) {
+						if (rrRunner->nextHop==findTargetInfEntry(from)->myInf) {
+							rrRunner->cost=16;
+						}
+						rrRunner=rrRunner->next;
+					}
 					printf("sending triggered update\n");
 					sendRipUpdates();
 					/*if (prev!=NULL) {
