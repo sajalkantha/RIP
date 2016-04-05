@@ -481,82 +481,85 @@ void* listenForInput() {
                 }
                 else if (ripPacket->protocol==200) {
                 	printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
+                	printf("!!!!!!!!!%d\n", ripPacket->ripPayload.command);
                 	if (ripPacket->ripPayload.command==1) {
                 		printf("just a received a rip request, sending triggered response\n");
                 		sendRipUpdates();
                 		continue;
                 	}
-                	int i;
-                	for (i=0;i<MAX_STATES;i++) {
-                		printf("entry%d\n",i);
-                		if (ripPacket->ripPayload.data[i].cost==-1) {
-                			printf("nulled%d\n",i);
-                			break;
-                		}
-                		rip_entry_t* runner = ripHead;
-                		int new=1;
-                		while (runner!=NULL) {
-                			printf("%s:%s\n",runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address));
-                			if (strcmp(runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address))==0) {
-                				printf("%s match %s\n", runner->destIP, inet_ntoa(ripPacket->ripPayload.data[i].address));
-                				rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
-                				if (runner->timestamp!=0) {
-                					inf_entry_t* isender = findTargetInfEntry(ripPacket->ripPayload.data[i].address);
-                					if (isender!=NULL) {
-                						if (strcmp(isender->targetInfIP,inet_ntoa(ripPacket->sourceIP))==0) {
-                							printf("!!!!!!!!%s update timestamp\n",isender->targetInfIP);
-                							runner->timestamp=current_timestamp();
-                							runner->cost=1;
-                						}
-                						else {
-                							printf("!!!!!!!%s:%s received indirect rip, no time update\n",isender->targetInfIP,runner->destIP);
-                						}
-                					}
-                					else {
-                						printf("!!!!!not neighbor, update ts\n");
-                						runner->timestamp=current_timestamp();
-                					}
-                				}
-                				printf("%d+%d<%d?\n",ripPacket->ripPayload.data[i].cost,sender->cost,runner->cost);
-                				printf("%s\n",inet_ntoa(ripPacket->ripPayload.data[i].address));
-                				inf_entry_t* infOfSender = findTargetInfEntry(ripPacket->sourceIP);
-                				if (ripPacket->ripPayload.data[i].cost+sender->cost<runner->cost) { //new path has shorter cost
-                					printf("rip updated");
-                					runner->cost=(ripPacket->ripPayload.data[i].cost+sender->cost);
-                					runner->nextHop=sender->nextHop;
-                				}
-                				else if (runner->nextHop==infOfSender->myInf) { //old path cost changed
-                					printf("path cost changed %d/%d",runner->nextHop,infOfSender->myInf);
-                					runner->cost=(ripPacket->ripPayload.data[i].cost+sender->cost);
-                				}
-                				new=0;
+                	else if (ripPacket->ripPayload.command==2) {
+                		int i;
+                		for (i=0;i<MAX_STATES;i++) {
+                			printf("entry%d\n",i);
+                			if (ripPacket->ripPayload.data[i].cost==-1) {
+                				printf("nulled%d\n",i);
                 				break;
                 			}
-                			runner=runner->next;
-                		}
-                		if (new==1) {
-                			printf("ADDINGGGGGGGGGG\n");
-                			rip_entry_t* arunner = ripHead;
-                			while(arunner->next!=NULL) {
+                			rip_entry_t* runner = ripHead;
+                			int new=1;
+                			while (runner!=NULL) {
+                				printf("%s:%s\n",runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address));
+                				if (strcmp(runner->destIP,inet_ntoa(ripPacket->ripPayload.data[i].address))==0) {
+                					printf("%s match %s\n", runner->destIP, inet_ntoa(ripPacket->ripPayload.data[i].address));
+                					rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
+                					if (runner->timestamp!=0) {
+                						inf_entry_t* isender = findTargetInfEntry(ripPacket->ripPayload.data[i].address);
+                						if (isender!=NULL) {
+                							if (strcmp(isender->targetInfIP,inet_ntoa(ripPacket->sourceIP))==0) {
+                								printf("!!!!!!!!%s update timestamp\n",isender->targetInfIP);
+                								runner->timestamp=current_timestamp();
+                								runner->cost=1;
+                							}
+                							else {
+                								printf("!!!!!!!%s:%s received indirect rip, no time update\n",isender->targetInfIP,runner->destIP);
+                							}
+                						}
+                						else {
+                							printf("!!!!!not neighbor, update ts\n");
+                							runner->timestamp=current_timestamp();
+                						}
+                					}
+                					printf("%d+%d<%d?\n",ripPacket->ripPayload.data[i].cost,sender->cost,runner->cost);
+                					printf("%s\n",inet_ntoa(ripPacket->ripPayload.data[i].address));
+                					inf_entry_t* infOfSender = findTargetInfEntry(ripPacket->sourceIP);
+                					if (ripPacket->ripPayload.data[i].cost+sender->cost<runner->cost) { //new path has shorter cost
+                						printf("rip updated");
+                						runner->cost=(ripPacket->ripPayload.data[i].cost+sender->cost);
+                						runner->nextHop=sender->nextHop;
+                					}
+                					else if (runner->nextHop==infOfSender->myInf) { //old path cost changed
+                						printf("path cost changed %d/%d",runner->nextHop,infOfSender->myInf);
+                						runner->cost=(ripPacket->ripPayload.data[i].cost+sender->cost);
+                					}
+                					new=0;
+                					break;
+                				}
+                				runner=runner->next;
+                			}
+                			if (new==1) {
+                				printf("ADDINGGGGGGGGGG\n");
+                				rip_entry_t* arunner = ripHead;
+                				while(arunner->next!=NULL) {
+                					arunner=arunner->next;
+                				}
+                				rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
+                				rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
+                				printf("!%s!\n", inet_ntoa(ripPacket->ripPayload.data[i].address));
+                				rip->destIP=(char*)malloc(strlen(inet_ntoa(ripPacket->ripPayload.data[i].address))+1);
+                				memcpy (rip->destIP, inet_ntoa(ripPacket->ripPayload.data[i].address), strlen(inet_ntoa(ripPacket->ripPayload.data[i].address))+1);
+                				printf("destIP=%s", rip->destIP);
+                				rip->nextHop = sender->nextHop;
+                				rip->cost = ripPacket->ripPayload.data[i].cost+sender->cost;
+                				rip->timestamp = current_timestamp();
+                				rip->next = NULL;
+                				arunner->next=rip;
                 				arunner=arunner->next;
                 			}
-                			rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
-                			rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
-                			printf("!%s!\n", inet_ntoa(ripPacket->ripPayload.data[i].address));
-                			rip->destIP=(char*)malloc(strlen(inet_ntoa(ripPacket->ripPayload.data[i].address))+1);
-                			memcpy (rip->destIP, inet_ntoa(ripPacket->ripPayload.data[i].address), strlen(inet_ntoa(ripPacket->ripPayload.data[i].address))+1);
-                			printf("destIP=%s", rip->destIP);
-                			rip->nextHop = sender->nextHop;
-                			rip->cost = ripPacket->ripPayload.data[i].cost+sender->cost;
-                			rip->timestamp = current_timestamp();
-                			rip->next = NULL;
-                			arunner->next=rip;
-                			arunner=arunner->next;
+                			fflush(stdout);
                 		}
-                		fflush(stdout);
                 	}
                 }
-        		//printf("(post1)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
+                //printf("(post1)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
         	}
         }
         else if (recvlen<0) {
