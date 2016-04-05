@@ -112,6 +112,21 @@ long long current_timestamp() {
     return milliseconds;
 }
 
+char* fitIpToRef(char* ip) {
+ 	in_addr_t addr;
+ 	inet_pton(AF_INET, ip, &addr);
+ 	char reversed_ip[MAX_IP_LEN];
+ 	/* Reverse the bytes in the binary address */
+ 	addr =
+ 			((addr & 0xff000000) >> 24) |
+ 			((addr & 0x00ff0000) >>  8) |
+ 			((addr & 0x0000ff00) <<  8) |
+ 			((addr & 0x000000ff) << 24);
+ 	inet_ntop(AF_INET, &addr, reversed_ip, sizeof(reversed_ip));
+ 	//printf("===%s===\n", reversed_ip);
+ 	return reversed_ip;
+  }
+
 int ReadFromFile (char*  file) {
 	char line[MAX_LINE_SIZE];
 	FILE *node_file = fopen(file, "r");
