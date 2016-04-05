@@ -668,9 +668,15 @@ void HandleUserInput() {
 				char* destIP = (char*)malloc(strlen(first));
 				strcpy(destIP,first);
 				char* substr = strstr(input,first);
-				char* message = substr+strlen(first)+1;
-				printf("%s",message);
-				sendMessage(destIP,message);
+				if (strlen(input)>(strlen("send")+1+strlen(destIP)+1)) {
+					char* message = substr+strlen(first)+1;
+					printf("msg:%s",message);
+					fflush(stdout);
+					sendMessage(destIP,message);
+				}
+				else {
+					printf("Improper formatting\n");
+				}
 			}
 		}
 	}
