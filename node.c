@@ -23,10 +23,11 @@
 
 #define MAX_BACK_LOG (5)
 #define MAX_STATES 64
-#define MAX_MSG_LENGTH (1300)
+#define MAX_MSG_LENGTH (512000)
+#define MTU (480)
 #define MAX_LINE_SIZE (1000)
 #define MAX_IP_LEN (30)
-#define BUFSIZE 2048
+//#define BUFSIZE 2048
 #define TIMEOUT_LEN (12000)
 #define UDP_PROTO (17)
 /*#include "rlib.h"*/
@@ -409,12 +410,14 @@ void* listenForInput() {
         	printf("packet: tos:%d\n",ripPacket->tos);
         	printf("packet: totallen:%d\n",ripPacket->totallen);
         	printf("packet: ttl:%d\n",ripPacket->ttl);
+        	printf("packet: fragoffset:%d\n",ripPacket->fragoffset);
         	printf("packet: version and headerlen:%d\n",ripPacket->version_and_headerlen);
 
         	if (findInfEntry(ripPacket->destIP)->up) {
                 //buf[recvlen] = 0;
                 printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
                 if (ripPacket->protocol==UDP_PROTO) {
+                	printf("udp payload length=%d\n", (int)strlen((char*)&ripPacket->ripPayload));
                 	printf("%s",(char*)&ripPacket->ripPayload);
                 	fflush(stdout);
                 }
@@ -544,14 +547,59 @@ void* ReceiverThread() {
 	}
 }
 
+void sendMessageFragTo(int infId, char* message, int fragOffset) {
+	inf_entry_t* runner = infHead;
+	rip_packet_t* udpPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
+	udpPacket->version_and_headerlen=0x45;
+	udpPacket->tos=0;
+	udpPacket->totallen=MTU;
+	udpPacket->id=0;
+	udpPacket->fragoffset=0x2000;
+	udpPacket->fragoffset=udpPacket->fragoffset+fragOffset;
+	udpPacket->ttl=16;
+	udpPacket->protocol=UDP_PROTO;
+	udpPacket->cksum=0;
+	inet_aton(runner->myInfIP,&udpPacket->sourceIP);
+	inet_aton(runner->targetInfIP,&udpPacket->destIP);
+	udpPacket->options_and_padding=0;
+
+	printf("start memcpy %d\n", fragOffset);
+	memcpy(&udpPacket->ripPayload,message,MTU);
+	printf("end memcpy, payload length=%d\n", (int)strlen((char*)&udpPacket->ripPayload));
+
+	udpPacket->cksum=ip_sum((char*)udpPacket,sizeof(rip_packet_t));
+	while (runner!=NULL) {
+		if (runner->myInf==infId && runner->up) {
+			if (sendto(runner->socket, udpPacket, sizeof(rip_packet_t), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
+				perror("Send error");
+				return;
+			}
+			return;
+		}
+		runner=runner->next;
+	}
+}
+
 void sendMessageTo(int infId, char* message) {
+	int tooLarge=0;
+	int fragOffset = 0;
+	while (strlen(message)>MTU) {
+		printf("length left=%d",(int)strlen(message));
+		tooLarge=1;
+		sendMessageFragTo(infId, message, fragOffset);
+		message=message+MTU;
+		fragOffset+=(MTU/8);
+	}
+	if (tooLarge==1) {
+		//return;
+	}
 	inf_entry_t* runner = infHead;
 	rip_packet_t* udpPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
 	udpPacket->version_and_headerlen=0x45;
 	udpPacket->tos=0;
 	udpPacket->totallen=strlen(message);
 	udpPacket->id=0;
-	udpPacket->fragoffset=0;
+	udpPacket->fragoffset=fragOffset;
 	udpPacket->ttl=16;
 	udpPacket->protocol=UDP_PROTO;
 	udpPacket->cksum=0;
