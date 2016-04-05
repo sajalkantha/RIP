@@ -380,9 +380,12 @@ inf_entry_t* findTargetInfEntry(struct in_addr destIP) {
 
 inf_entry_t* findInfEntry(struct in_addr destIP) {
 	inf_entry_t* runner = infHead;
-	printf("!!lookup %s\n",inet_ntoa(destIP));
+	char* temp = (char*)malloc(MAX_IP_LEN);
+	strcpy(temp,fitIpToRef(inet_ntoa(destIP)));
+	printf("!!lookup %s\n",temp);
 	while(runner!=NULL) {
-		if (strcmp(runner->myInfIP,inet_ntoa(destIP))==0) {
+		printf("%s:%s\n",runner->myInfIP,temp);
+		if (strcmp(runner->myInfIP,temp)==0) {
 			return runner;
 		}
 		runner=runner->next;
@@ -423,8 +426,8 @@ void* listenForInput() {
         //recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
         //printf("received %d bytes\n", recvlen);
         if (recvlen > 0) {
-        	printf("packet: destIP:%s\n",inet_ntoa(ripPacket->destIP));
-        	printf("packet: sourceIP:%s\n",inet_ntoa(ripPacket->sourceIP));
+        	printf("packet: destIP:%s\n",fitIpToRef(inet_ntoa(ripPacket->destIP)));
+        	printf("packet: sourceIP:%s\n",fitIpToRef(inet_ntoa(ripPacket->sourceIP)));
         	printf("packet: id:%d\n",ripPacket->id);
         	printf("packet: opotions and padding:%d\n",ripPacket->options_and_padding);
         	printf("packet: protocol:%d\n",ripPacket->protocol);
@@ -438,7 +441,7 @@ void* listenForInput() {
 
         	if (findInfEntry(ripPacket->destIP)->up) {
                 //buf[recvlen] = 0;
-                printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
+                printf("received packet, source ip: %s\n", fitIpToRef(inet_ntoa(ripPacket->sourceIP)));
                 if (ripPacket->protocol==UDP_PROTO) {
                 	printf("udp payload length=%d\n", (int)strlen((char*)&ripPacket->ripPayload));
                 	printf("fragoffset=%d\n",ripPacket->fragoffset);
