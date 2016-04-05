@@ -422,7 +422,7 @@ void* listenForInput() {
                 	printf("udp payload length=%d\n", (int)strlen((char*)&ripPacket->ripPayload));
                 	if (ripPacket->fragoffset>=8192) { //message fragmented
                 		int offset = ripPacket->fragoffset % 8192;
-                		memcpy(msgPointer+8*offset,ripPacket->ripPayload,MTU);
+                		memcpy(msgPointer+8*offset,&ripPacket->ripPayload,MTU);
                 	}
                 	else {
                 		printf("%s",msgPointer);
