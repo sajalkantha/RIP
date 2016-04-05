@@ -396,6 +396,8 @@ void* listenForInput() {
         int recvlen;                    /* # bytes received */
         struct sockaddr_in remaddr;     /* remote address */
         socklen_t addrlen = sizeof(remaddr);            /* length of addresses */
+        char* buffer = (char*)malloc(MAX_MSG_LENGTH);
+        char* msgPointer = buffer;
         rip_packet_t* ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
         //printf("waiting to read...\n");
         recvlen = recvfrom(listenSocket, ripPacket, sizeof(rip_packet_t), 0, (struct sockaddr *)&remaddr, &addrlen);
@@ -418,8 +420,16 @@ void* listenForInput() {
                 printf("received packet, source ip: %s\n", inet_ntoa(ripPacket->sourceIP));
                 if (ripPacket->protocol==UDP_PROTO) {
                 	printf("udp payload length=%d\n", (int)strlen((char*)&ripPacket->ripPayload));
-                	printf("%s",(char*)&ripPacket->ripPayload);
-                	fflush(stdout);
+                	if (ripPacket->fragoffset>=8192) { //message fragmented
+                		int offset = ripPacket->fragoffset % 8192;
+                		memcpy(msgPointer+8*offset,ripPacket->ripPayload,MTU);
+                	}
+                	else {
+                		printf("%s",msgPointer);
+                		buffer = (char*)malloc(MAX_MSG_LENGTH);
+                		msgPointer = buffer;
+                		fflush(stdout);
+                	}
                 }
                 else if (ripPacket->protocol==200) {
                 printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
