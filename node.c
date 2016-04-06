@@ -260,7 +260,7 @@ void sendRipRequests() {
 	rip_packet_t* ripPacket;
 	while (!(runner==NULL)) {
 		ripPacket = (rip_packet_t*)malloc(sizeof(rip_packet_t));
-		ripPacket->version_and_headerlen=0;
+		ripPacket->version_and_headerlen=0x45;
 		ripPacket->tos=0;
 		ripPacket->totallen=6*32*+32+64*numEntries;
 		ripPacket->id=0;
@@ -378,7 +378,7 @@ inf_entry_t* findTargetInfEntry(struct in_addr destIP) {
 	strcpy(temp,fitIpToRef(inet_ntoa(destIP)));
 	printf("!!targlookup %s\n",temp);
 	while(runner!=NULL) {
-		printf("%s:%s\n",runner->myInfIP,temp);
+		//printf("%s:%s\n",runner->myInfIP,temp);
 		if (strcmp(runner->targetInfIP,temp)==0) {
 			return runner;
 		}
@@ -394,7 +394,7 @@ inf_entry_t* findInfEntry(struct in_addr destIP) {
 	strcpy(temp,fitIpToRef(inet_ntoa(destIP)));
 	printf("!!reglookup %s\n",temp);
 	while(runner!=NULL) {
-		printf("%s:%s\n",runner->myInfIP,temp);
+		//printf("%s:%s\n",runner->myInfIP,temp);
 		if (strcmp(runner->myInfIP,temp)==0) {
 			return runner;
 		}
@@ -430,6 +430,7 @@ void forwardpacket(int infId, rip_packet_t* packet) {
 			char* temp = (char*)malloc(MAX_IP_LEN);
 			strcpy(temp,fitIpToRef(runner->myInfIP));
 			inet_aton(temp,&packet->sourceIP);
+			printf("forward sending...\n");
 			if (sendto(runner->socket, packet, sizeof(rip_packet_t), 0, (struct sockaddr*)(&runner->server_addr), sizeof(runner->server_addr)) < 0) {
 				perror("Send error");
 				return;
@@ -457,6 +458,7 @@ void* listenForInput() {
 		//recvlen = recvfrom(fd, buf, BUFSIZE, 0, (struct sockaddr *)&remaddr, &addrlen);
 		//printf("received %d bytes\n", recvlen);
 		if (recvlen > 0) {
+
 			printf("packet: destIP:%s\n",fitIpToRef(inet_ntoa(ripPacket->destIP)));
 			printf("packet: sourceIP:%s\n",fitIpToRef(inet_ntoa(ripPacket->sourceIP)));
 			printf("packet: id:%d\n",ripPacket->id);
@@ -476,8 +478,35 @@ void* listenForInput() {
 			}
 			if (infFound==0) {
 				myInf=findTargetInfEntry(ripPacket->sourceIP);
+			}
+			if (myInf!=NULL) {
 				infFound=1;
 			}
+			if (infFound==0) {
+				rip_entry_t* tempRip = findRipEntry(ripPacket->sourceIP);
+				myInf=infHead;
+				while (myInf!=NULL) {
+					if (myInf->myInf==tempRip->nextHop) {
+						infFound=1;
+						printf("inf found using reverse lookup");
+						break;
+					}
+					myInf=myInf->next;
+				}
+			}
+			inf_entry_t* outInf;
+			//if (infFound==0) {
+				rip_entry_t* ripentry = findRipEntry(ripPacket->destIP);
+				printf("found rip entry: %s\n",ripentry->destIP);
+				outInf = infHead;
+				while (outInf!=NULL) {
+					if (outInf->myInf==ripentry->nextHop) {
+						//infFound=1;
+						break;
+					}
+					outInf=outInf->next;
+				}
+			//}
 			if (infFound==0) {
 				printf("###interface not found\n");
 			}
@@ -486,12 +515,12 @@ void* listenForInput() {
 				printf("received packet, source ip: %s\n", fitIpToRef(inet_ntoa(ripPacket->sourceIP)));
 				if (ripPacket->protocol==UDP_PROTO) {
 					printf("udp payload length=%d\n", (int)strlen((char*)&ripPacket->ripPayload));
-					printf("fragoffset=%d\n",ripPacket->fragoffset);
+					//printf("fragoffset=%d\n",ripPacket->fragoffset);
 					if (findRipEntry(ripPacket->destIP)->cost==0) {
 						printf("#### my message #####");
 						if ((ripPacket->fragoffset)>=8192) { //message fragmented
 							int offset = ripPacket->fragoffset % 8192;
-							//printf("8*offset=%d\n",8*offset);
+							printf("8*offset=%d\n",8*offset);
 							memcpy(buffer+8*offset,&ripPacket->ripPayload,MTU);
 							//printf("a8*offset=%d\n",8*offset);
 							//char* oldtotalline = totalline;
@@ -507,7 +536,7 @@ void* listenForInput() {
 						}
 						else {
 							int offset = ripPacket->fragoffset % 8192;
-							//printf("(pre)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
+							printf("(pre)buffer:payload %s:%s\n",buffer,&ripPacket->ripPayload);
 							memcpy(buffer+8*offset,&ripPacket->ripPayload,ripPacket->totallen);
 							memcpy(buffer+8*offset+ripPacket->totallen, "\0", 1);
 							//char* oldtotalline = totalline;
@@ -524,27 +553,29 @@ void* listenForInput() {
 							fflush(stdout);
 						}
 					}
-					else { //keep forwarding
+					else if (outInf->up) { //keep forwarding
+						printf("keep forwarding\n");
 						int sent = 0;
 						rip_entry_t* runner = ripHead;
 						char* temp = (char*)malloc(MAX_IP_LEN);
 						strcpy(temp,fitIpToRef(inet_ntoa(ripPacket->destIP)));
-						while (runner!=NULL) {
+						forwardpacket(outInf->myInf,ripPacket);
+						/*while (runner!=NULL) {
 							if (strcmp(runner->destIP,temp)==0) {
-								forwardpacket(runner->nextHop,ripPacket);
+								forwardpacket(outInf->myInf,ripPacket);
 								sent=1;
 								break;
 							}
 							runner=runner->next;
 						}
-						if (send==0) {
+						if (sent==0) {
 							printf("IP address not found...\n");
-						}
+						}*/
 					}
 				}
 				else if (ripPacket->protocol==200) {
-					printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
-					printf("!!!!!!!!!%d\n", ripPacket->ripPayload.command);
+					//printf("first entry cost=%d\n",ripPacket->ripPayload.data[0].cost);
+					//printf("!!!!!!!!!%d\n", ripPacket->ripPayload.command);
 					if (ripPacket->ripPayload.command==1) {
 						printf("just a received a rip request, sending triggered response\n");
 						sendRipUpdates();
@@ -562,7 +593,7 @@ void* listenForInput() {
 							int new=1;
 							char* temp = (char*)malloc(MAX_IP_LEN);
 							while (runner!=NULL) {
-                				printf("%s:%s\n",runner->destIP,fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
+                				//printf("%s:%s\n",runner->destIP,fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
     							strcpy(temp,fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
                 				if (strcmp(runner->destIP,temp)==0) {
                 					printf("%s match %s\n", runner->destIP, fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
@@ -586,8 +617,8 @@ void* listenForInput() {
                 							runner->timestamp=current_timestamp();
                 						}
                 					}
-                					printf("%d+%d<%d?\n",ripPacket->ripPayload.data[i].cost,sender->cost,runner->cost);
-                					printf("%s\n",fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
+                					//printf("%d+%d<%d?\n",ripPacket->ripPayload.data[i].cost,sender->cost,runner->cost);
+                					//printf("%s\n",fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
                 					inf_entry_t* infOfSender = findTargetInfEntry(ripPacket->sourceIP);
                 					if (ripPacket->ripPayload.data[i].cost+sender->cost<runner->cost) { //new path has shorter cost
                 						printf("rip updated");
@@ -616,7 +647,7 @@ void* listenForInput() {
                 				}
                 				rip_entry_t* sender = findRipEntry(ripPacket->sourceIP);
                 				rip_entry_t* rip = (rip_entry_t*)malloc(sizeof(rip_entry_t));
-                				printf("!%s!\n", fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
+                				//printf("!%s!\n", fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
                 				rip->destIP=(char*)malloc(strlen(inet_ntoa(ripPacket->ripPayload.data[i].address))+1);
     							strcpy(temp,fitIpToRef(inet_ntoa(ripPacket->ripPayload.data[i].address)));
                 				memcpy (rip->destIP, temp, strlen(temp)+1);
