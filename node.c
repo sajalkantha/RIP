@@ -608,7 +608,13 @@ void* listenForInput() {
                 								runner->cost=1;
                 								runner->nextHop=isender->myInf;
                 							}
-                							else {
+                							else{
+                								inf_entry_t* recved = findTargetInfEntry(ripPacket->sourceIP);
+                								rip_entry_t* target = findRipEntry(ripPacket->ripPayload.data[i].address);
+                								if (recved->myInf==target->nextHop) {
+                									printf("!!!!!!%d revised neighbor update ts",recved->myInf);
+                    								runner->timestamp=current_timestamp();
+                								}
                 								printf("!!!!!!!%s:%s received indirect rip, no time update\n",isender->targetInfIP,runner->destIP);
                 							}
                 						}
