@@ -841,7 +841,7 @@ void HandleUserInput() {
 		if(strcmp(input,"routes")==0) {
 			rip_entry_t* runner=ripHead;
 			while(runner!=NULL) {
-				if (runner->cost!=-2) {
+				if (runner->cost!=0) {
 					printf("%s\t%d\t%d\n",runner->destIP,runner->nextHop,runner->cost);
 				}
 				runner=runner->next;
@@ -947,7 +947,7 @@ int main(int argc, char* argv[]) {
 	ReadFromFile(argv[1]);
 	initializeRoutingTable();
 	CreateListenSocket(IP,port);
-	print_debug();
+	//print_debug();
 	pthread_create(&sThread, NULL, &SenderThread, NULL); //sThread holds senderThread
 	pthread_create(&rThread, NULL, &ReceiverThread, NULL);
 	sleep(1);
